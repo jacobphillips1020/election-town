@@ -1,6 +1,6 @@
 export type Party = 'D' | 'R' | 'I' | 'L' | 'G' | 'O'
 export type Candidate = { id: string; name: string; party: Party }
-export type Kind = 'senate' | 'house' | 'governor' | 'congress'
+export type Kind = 'senate' | 'house' | 'governor' | 'congress' | 'senate_seats' | 'house_seats'
 export type Phase = 'proposed' | 'rejected' | 'open' | 'closed' | 'settled' | 'canceled'
 export type Basis = 'single_round' | 'runoff_final' | 'rcv_final'
 
@@ -18,6 +18,8 @@ export type Market = {
   buy_in_cents: number | null
   entry_deadline: string | null
   polling_ref: { race_type: 'senate' | 'house' | 'governor'; state: string; district: string | null; special: boolean } | null
+  featured: boolean
+  sort_order: number
   entrants: number
   pool_cents: number
   has_entry: boolean
@@ -26,7 +28,7 @@ export type Market = {
   cancel_reason: string | null
   result_winner_id?: string | null
   result_winner_share_tenths?: number | null
-  result_seats?: Seats | null
+  result_seats?: Seats | { r: number } | null
   result_source_url?: string | null
 }
 
@@ -40,7 +42,7 @@ export type Entry = {
   display_name?: string
   winner_id: string | null
   shares: Shares | null
-  seats: Seats | null
+  seats: Seats | { r: number } | null
   commitment_cents: number
 }
 
@@ -68,7 +70,7 @@ export type Run = {
   version: number
   outcome: 'settled' | 'no_winner_refund' | 'underfilled_refund' | 'canceled_refund'
   reason: string | null
-  result: { winner_id?: string; winner_share_tenths?: number; seats?: Seats; source_url?: string }
+  result: { winner_id?: string; winner_share_tenths?: number; seats?: Seats | { r: number }; source_url?: string }
   pool_cents: number
   created_at: string
 }

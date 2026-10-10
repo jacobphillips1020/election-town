@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAccount, useApp, useRpc } from '../data/context'
 import { boardKey, type BoardRace } from '../domain/board'
 import { refreshBoardApi, refreshMarket } from '../polling/client'
 import { Loading } from './common'
 import { RaceBoard } from './RaceBoard'
 
-/** Pick a race, open its market, place your bet. Everything else comes from the data (launch_race in the database). */
+/** Pick a race, open a side bet on it, make your pick. Everything else comes from the data (launch_race in the database). */
 export function OpenMarketPage() {
   const { backend, me } = useApp()
   const nav = useNavigate()
@@ -27,6 +27,7 @@ export function OpenMarketPage() {
 
   async function openMarket(r: BoardRace) {
     if (!account.signedIn) return nav(account.signupPath(`/open?q=${encodeURIComponent(`${r.state} ${r.race_type} ${r.district ?? ''}`.trim())}`))
+    if (r.market) return nav(r.market.featured ? '/ballot' : `/m/${r.market.id}`)
     if (!account.isMember) return setError('The group is invite-only right now. Ask the organizer for the invitation link.')
     setOpening(boardKey(r))
     setError('')
@@ -38,7 +39,7 @@ export function OpenMarketPage() {
       await Promise.race([refreshMarket(backend, id), new Promise((res) => setTimeout(res, 4000))])
       nav(`/m/${id}?new=1`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open the market.')
+      setError(err instanceof Error ? err.message : 'Could not open the side bet.')
       setOpening(null)
     }
   }
@@ -48,14 +49,15 @@ export function OpenMarketPage() {
   const note = backend.mode === 'demo'
     ? 'Demo mode: live polling isn’t loaded here, so races show without averages.'
     : !anyPolling ? (refreshing ? 'Loading the latest polling…' : 'Polling hasn’t loaded yet.') : undefined
-  const buyIn = me?.group ? `$${me.group.default_buy_in_cents / 100}` : 'a fixed'
+  const buyIn = me?.group ? `$${me.group.default_buy_in_cents / 100}` : '$5'
 
   return (
     <main className="page" id="main">
-      <h1>Open a market</h1>
+      <p className="small"><Link to="/side">← Side bets</Link></p>
+      <h1>Open a side bet</h1>
       <p className="muted" style={{ maxWidth: '38rem' }}>
-        Pick a race, open its market, and place your bet. The candidates, polling, rules, {buyIn} buy-in and closing time
-        are all set for you. You can change your pick until entries close.
+        Pick any race that isn&rsquo;t on the main ballot. The candidates, polling, rules, {buyIn} stake and closing time are
+        set for you; then make your pick and send the link to friends. You can change your pick until it closes.
       </p>
       {board.loading && !board.data ? <Loading /> : (
         <RaceBoard races={races} onOpen={openMarket} opening={opening} error={error || board.error || ''}

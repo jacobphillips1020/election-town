@@ -20,7 +20,7 @@ export type BoardRace = {
   district: string | null
   special: boolean
   polling: BoardPolling | null
-  market: { id: string; title: string; phase: string } | null
+  market: { id: string; title: string; phase: string; featured?: boolean } | null
 }
 
 export const toEntry = (r: BoardRace): RaceEntry => ({ kind: r.race_type, state: r.state, district: r.district, special: r.special, polled: !!r.polling })

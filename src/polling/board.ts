@@ -3,7 +3,7 @@
 // 3 list requests per refresh (at most every 12 h), and per-race requests only for names that are
 // missing or more than 3 days old.
 import { STATES, type PollingRef } from '../domain/states.js'
-import { PLACEHOLDER_D, PLACEHOLDER_R, fetchRace } from './pollingsource.js'
+import { PLACEHOLDER_D, PLACEHOLDER_R, buildRaceUrl, normalizeRace } from './pollingsource.js'
 
 export const BOARD_MS = 12 * 3600e3
 export const NAMES_MS = 3 * 24 * 3600e3
@@ -25,7 +25,13 @@ export type BoardRow = {
   dem_name?: string | null
   rep_name?: string | null
   names_fetched_at?: string | null
+  experts?: Expert[] | null
 }
+
+/** One forecaster's rating as the vendor publishes it, e.g. { source: 'Cook Political Report', rating: 'Toss Up' }. */
+export type Expert = { source: string; rating: string }
+type Known = { dem_name: string | null; rep_name: string | null; names_fetched_at: string | null; experts?: Expert[] | null }
+type Detail = { dem: string | null; rep: string | null; experts?: Expert[] | null }
 
 export const raceKey = (t: string, s: string, d: string | null, special: boolean) => `${t}:${s}:${d ?? ''}:${special ? 1 : 0}`
 
@@ -64,8 +70,8 @@ export function parseRaceList(json: unknown, nowIso: string): BoardRow[] {
 export type BoardDeps = {
   lastBoardFetch(): Promise<number | null>
   fetchList(type: 'senate' | 'governor' | 'house'): Promise<unknown>
-  existingNames(): Promise<Map<string, { dem_name: string | null; rep_name: string | null; names_fetched_at: string | null }>>
-  fetchNames(ref: PollingRef): Promise<{ dem: string | null; rep: string | null }>
+  existingNames(): Promise<Map<string, Known>>
+  fetchNames(ref: PollingRef): Promise<Detail>
   upsert(rows: BoardRow[]): Promise<void>
   now?: () => number
 }
@@ -82,12 +88,11 @@ export async function refreshBoard(d: BoardDeps, opts: { force?: boolean; concur
   const known = await d.existingNames()
   const todo = rows.filter((r) => {
     const k = known.get(r.race_key)
-    if (k?.dem_name && k.rep_name && k.names_fetched_at && now - Date.parse(k.names_fetched_at) < NAMES_MS) {
-      Object.assign(r, { dem_name: k.dem_name, rep_name: k.rep_name, names_fetched_at: k.names_fetched_at })
-      return false
-    }
-    if (k) Object.assign(r, { dem_name: k.dem_name, rep_name: k.rep_name, names_fetched_at: k.names_fetched_at })
-    return true
+    const keep = { dem_name: k?.dem_name ?? null, rep_name: k?.rep_name ?? null, names_fetched_at: k?.names_fetched_at ?? null, experts: k?.experts ?? null }
+    Object.assign(r, keep)
+    // Ask again when names are missing or stale, or when this race's detail was never read for expert ratings
+    // (null = never read; [] = read, none published).
+    return !(k?.dem_name && k.rep_name && k.names_fetched_at && now - Date.parse(k.names_fetched_at) < NAMES_MS && k.experts != null)
   })
 
   let i = 0
@@ -100,6 +105,7 @@ export async function refreshBoard(d: BoardDeps, opts: { force?: boolean; concur
         const n = await d.fetchNames({ race_type: r.race_type, state: r.state, district: r.district, special: r.is_special })
         r.dem_name = n.dem ?? r.dem_name ?? null
         r.rep_name = n.rep ?? r.rep_name ?? null
+        r.experts = n.experts ?? r.experts ?? null
         r.names_fetched_at = nowIso
         names++
       } catch {
@@ -111,12 +117,27 @@ export async function refreshBoard(d: BoardDeps, opts: { force?: boolean; concur
   return { status: 'refreshed' as const, races: rows.length, names, failed }
 }
 
-/** Candidate names for one race, from the vendor's recent polls (null when not published). */
-export async function fetchNames(ref: PollingRef): Promise<{ dem: string | null; rep: string | null }> {
-  const s = await fetchRace(ref)
+/** Parses the expert ratings in a race detail response (Cook, Inside Elections, Sabato); [] when none are published. */
+export function parseExperts(json: unknown): Expert[] {
+  const list = (json as { expert_ratings?: unknown })?.expert_ratings
+  if (!Array.isArray(list)) return []
+  return list.flatMap((e) => {
+    const source = typeof e?.source === 'string' ? e.source.trim() : ''
+    const rating = typeof e?.rating === 'string' ? e.rating.trim() : ''
+    return source && rating ? [{ source: source.slice(0, 60), rating: rating.slice(0, 40) }] : []
+  })
+}
+
+/** Candidate names (from the vendor's recent polls) and expert ratings for one race; null when not published. */
+export async function fetchNames(ref: PollingRef, fetchImpl: typeof fetch = fetch): Promise<Detail> {
+  const res = await fetchImpl(buildRaceUrl(ref), { headers: { accept: 'application/json' } })
+  if (!res.ok) throw new Error(`PollingSource responded ${res.status}`)
+  const json = await res.json()
+  const s = normalizeRace(json, ref)
   const [d, r] = s?.data.candidates ?? []
   return {
     dem: d && d.name !== PLACEHOLDER_D ? d.name : null,
     rep: r && r.name !== PLACEHOLDER_R ? r.name : null,
+    experts: parseExperts(json),
   }
 }

@@ -6,7 +6,8 @@ import type { PollingRef } from '../src/domain/states.js'
 import { fetchRace } from '../src/polling/pollingsource.js'
 import { refreshAll, type Cand } from '../src/polling/refresh.js'
 import { refreshBoard } from '../src/polling/board.js'
-import { boardDeps } from './_board.js'
+import { refreshForecasts } from '../src/polling/forecast.js'
+import { boardDeps, forecastDeps } from './_board.js'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -23,8 +24,9 @@ export default {
     if (!url || !service) return json({ status: 'not-configured' })
     const db = createClient(url, service, { auth: { persistSession: false } })
 
-    // 1) the race board (averages + names for every published race), 2) each proposed/open market's snapshot.
+    // 1) the race board (averages, names, expert ratings), 2) seat forecasts, 3) each open market's snapshot.
     const board = await refreshBoard(boardDeps(db)).catch(() => ({ status: 'failed' }))
+    const forecasts = await refreshForecasts(forecastDeps(db)).catch(() => ({ status: 'failed' }))
     const summary = await refreshAll({
       listRaceMarkets: async () => {
         const { data } = await db.from('markets').select('id, entry_deadline')
@@ -50,6 +52,6 @@ export default {
         if (error) throw new Error('store failed')
       },
     })
-    return json({ status: 'ok', board, markets: summary })
+    return json({ status: 'ok', board, forecasts, markets: summary })
   },
 }

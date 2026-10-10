@@ -1,5 +1,6 @@
--- DEMO FIXTURES. Entirely fictional people, candidates, and numbers. Loaded only by the
--- in-browser demo; never part of the migrations and never run against a real database.
+-- DEMO FIXTURES. Fictional people and picks. Loaded only by the in-browser demo (after src/demo/polling.sql);
+-- never part of the migrations and never run against a real database.
+-- The main pool is open with three ballots in; there's an open side bet, a closed one, and a settled one.
 
 update public.group_settings set open_signup = false;  -- so 'Sam' starts outside the group
 
@@ -18,25 +19,30 @@ insert into public.member_contacts (user_id, phone) values
   ('d0000000-0000-4000-8000-000000000005', '+13125550104'), ('d0000000-0000-4000-8000-000000000006', '+13125550105');
 insert into public.members (user_id)
   select id from auth.users where id <> 'd0000000-0000-4000-8000-000000000006';
+update public.group_settings set pay_note = 'Venmo the organizer $50 before the pool closes (demo).';
 
-insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, candidates, has_other,
-                            outcome_basis, rules_note, buy_in_cents, entry_deadline, approved_at, polling_ref) values
-  ('a0000000-0000-4000-8000-000000000001', 'senate', 'DEMO · Senate, Fictional State', 'Fictional State', 'open',
-   'd0000000-0000-4000-8000-000000000002',
-   '[{"id":"c1","name":"Elena Garcia","party":"D"},{"id":"c2","name":"Tom Whitfield","party":"R"},{"id":"c3","name":"Ana Lee","party":"L"}]',
-   true, 'single_round', 'Demo fixture. Certified results from the (fictional) state canvass.', 1000,
-   now() + interval '4 days', now() - interval '2 days', '{"race_type":"senate","state":"MI","district":null,"special":false}'),
-  ('a0000000-0000-4000-8000-000000000002', 'governor', 'DEMO · Governor, Example State', 'Example State', 'open',
-   'd0000000-0000-4000-8000-000000000003',
-   '[{"id":"c1","name":"Rosa Delgado","party":"D"},{"id":"c2","name":"Mark Hale","party":"R"}]',
-   true, 'single_round', 'Demo fixture. Certified results from the (fictional) state canvass.', 1000,
-   now() + interval '1 day', now() - interval '3 days', '{"race_type":"governor","state":"AZ","district":null,"special":false}'),
-  ('a0000000-0000-4000-8000-000000000003', 'house', 'DEMO · House, Sample District 7', 'Sample District 7', 'open',
-   'd0000000-0000-4000-8000-000000000004',
-   '[{"id":"c1","name":"Jordan Ellis","party":"R"},{"id":"c2","name":"Priya Nair","party":"D"}]',
-   true, 'single_round', 'Demo fixture. Certified results from the (fictional) county canvass.', 1000,
-   now() + interval '1 day', now() - interval '5 days', '{"race_type":"house","state":"TX","district":"07","special":false}');
-
+-- A ballot from a compact spec: 'AK 1 51.2, GA 1 54.0, ...' (state, candidate 1 or 2, two-way share).
+create function public.demo_ballot(p_who uuid, p_spec text, p_senate_r int, p_house_r int) returns void
+language plpgsql as $$
+declare v jsonb := '{}'; m public.markets; part text; f text[]; w int; s int;
+begin
+  perform set_config('request.jwt.claim.sub', p_who::text, false);
+  for m in select * from public.markets where featured and status = 'open' loop
+    if m.kind = 'senate_seats' then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_senate_r)));
+    elsif m.kind = 'house_seats' then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_house_r)));
+    else
+      foreach part in array string_to_array(p_spec, ',') loop
+        f := regexp_split_to_array(btrim(part), '\s+');
+        if f[1] = m.polling_ref ->> 'state' then
+          w := f[2]::int; s := round(f[3]::numeric * 10)::int;
+          v := v || jsonb_build_object(m.id, jsonb_build_object('winner_id', 'c' || w,
+                 'shares', jsonb_build_object('c' || w, s, 'c' || (3 - w), 1000 - s)));
+        end if;
+      end loop;
+    end if;
+  end loop;
+  perform public.submit_ballot(v);
+end $$;
 
 do $$
 declare
@@ -45,51 +51,43 @@ declare
   dev uuid := 'd0000000-0000-4000-8000-000000000003';
   priya uuid := 'd0000000-0000-4000-8000-000000000004';
   alex uuid := 'd0000000-0000-4000-8000-000000000005';
-  a uuid := 'a0000000-0000-4000-8000-000000000001';
-  b uuid := 'a0000000-0000-4000-8000-000000000002';
-  c uuid := 'a0000000-0000-4000-8000-000000000003';
-  cong uuid;
+  ny17 uuid; ks uuid; mn uuid;
 begin
-  select id into cong from public.markets where kind = 'congress';
+  -- The main pool: three ballots in (Alex hasn't filled one out yet).
+  perform public.demo_ballot(maya, 'AK 1 51.0, GA 1 54.5, IA 2 50.5, ME 1 51.5, MI 1 51.0, NE 2 51.0, NH 1 53.0, NC 1 54.0, OH 1 51.5, TX 2 50.5', 48, 202);
+  perform public.demo_ballot(dev,  'AK 2 50.5, GA 1 53.0, IA 2 51.0, ME 2 50.5, MI 1 50.5, NE 2 52.0, NH 1 52.0, NC 1 53.5, OH 2 50.5, TX 2 52.0', 51, 214);
+  perform public.demo_ballot(priya,'AK 1 52.0, GA 1 55.0, IA 1 50.5, ME 1 52.0, MI 1 52.5, NE 1 50.5, NH 1 54.0, NC 1 55.0, OH 1 52.0, TX 1 50.5', 45, 196);
 
-  -- A: open, entries sealed.
-  perform set_config('request.jwt.claim.sub', maya::text, false);
-  perform public.submit_entry(a, 'c1', '{"c1":520,"c2":430,"c3":30,"other":20}');
-  perform public.submit_entry(cong, null, null, '{"house":{"d":222,"r":213,"o":0},"senate":{"d":48,"r":51,"o":1}}');
+  -- Side bets: NY-17 open, Kansas closed (picks revealed), Minnesota settled.
   perform set_config('request.jwt.claim.sub', dev::text, false);
-  perform public.submit_entry(a, 'c2', '{"c1":450,"c2":490,"c3":40,"other":20}');
-  perform public.submit_entry(cong, null, null, '{"house":{"d":215,"r":220,"o":0},"senate":{"d":47,"r":52,"o":1}}');
-
-  -- B and C: entries go in while open, then the deadline is moved into the past.
+  ny17 := public.launch_race('house', 'NY', '17');
+  perform public.submit_entry(ny17, 'c2', '{"c1":490,"c2":510}');
   perform set_config('request.jwt.claim.sub', maya::text, false);
-  perform public.submit_entry(b, 'c1', '{"c1":512,"c2":478,"other":10}');
-  perform public.submit_entry(c, 'c1', '{"c1":540,"c2":450,"other":10}');
+  perform public.submit_entry(ny17, 'c1', '{"c1":505,"c2":495}');
+  ks := public.launch_race('senate', 'KS');
+  mn := public.launch_race('senate', 'MN');
+  perform public.submit_entry(ks, 'c1', '{"c1":510,"c2":490}');
+  perform public.submit_entry(mn, 'c1', '{"c1":535,"c2":465}');
   perform set_config('request.jwt.claim.sub', dev::text, false);
-  perform public.submit_entry(b, 'c2', '{"c1":470,"c2":520,"other":10}');
-  perform public.submit_entry(c, 'c1', '{"c1":520,"c2":470,"other":10}');
+  perform public.submit_entry(ks, 'c2', '{"c1":480,"c2":520}');
+  perform public.submit_entry(mn, 'c1', '{"c1":520,"c2":480}');
   perform set_config('request.jwt.claim.sub', priya::text, false);
-  perform public.submit_entry(b, 'c1', '{"c1":530,"c2":460,"other":10}');
-  perform public.submit_entry(c, 'c2', '{"c1":440,"c2":550,"other":10}');
+  perform public.submit_entry(ks, 'c2', '{"c1":470,"c2":530}');
+  perform public.submit_entry(mn, 'c2', '{"c1":490,"c2":510}');
   perform set_config('request.jwt.claim.sub', alex::text, false);
-  perform public.submit_entry(b, 'c1', '{"c1":505,"c2":485,"other":10}');
-  perform public.submit_entry(c, 'c1', '{"c1":510,"c2":480,"other":10}');
+  perform public.submit_entry(ks, 'c1', '{"c1":515,"c2":485}');
+  perform public.submit_entry(mn, 'c1', '{"c1":545,"c2":455}');
 
   perform set_config('session_replication_role', 'replica', false);
-  update public.markets set entry_deadline = now() - interval '2 hours' where id in (b, c);
+  update public.markets set entry_deadline = now() - interval '2 hours' where id in (ks, mn);
   perform set_config('session_replication_role', 'origin', false);
 
-  insert into public.polling_snapshots (market_id, source_kind, source_name, source_url, as_of, fetched_at, data) values
-    (a, 'fixture', 'Demo fixture (invented numbers, not real polling)', null, current_date - 3, now() - interval '3 days',
-     '{"candidates":[{"name":"Elena Garcia","party":"D","pct":47.0},{"name":"Tom Whitfield","party":"R","pct":44.0},{"name":"Ana Lee","party":"L","pct":3.0}],"undecided":6,"note":"Invented for the demo."}'),
-    (b, 'fixture', 'Demo fixture (invented numbers, not real polling)', null, current_date - 6, now() - interval '6 days',
-     '{"candidates":[{"name":"Rosa Delgado","party":"D","pct":49.0},{"name":"Mark Hale","party":"R","pct":46.0}],"undecided":5,"note":"Invented for the demo."}');
-
-  -- C: settled.
   perform set_config('request.jwt.claim.sub', admin::text, false);
-  perform public.enter_result(c, 'c1', 523, null, 'https://example.invalid/demo-canvass');
-  perform public.confirm_settlement(c);
+  perform public.enter_result(mn, 'c1', 527, null, 'https://example.invalid/demo-canvass');
+  perform public.confirm_settlement(mn);
   perform public.record_transfer(alex, 'collected', 1000, current_date, 'Demo: paid by Venmo');
   perform set_config('request.jwt.claim.sub', '', false);
 end $$;
 
+drop function public.demo_ballot(uuid, text, int, int);
 update public.group_settings set open_signup = true;

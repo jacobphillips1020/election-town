@@ -5,8 +5,7 @@ import { useApp } from '../data/context'
 export function Masthead() {
   const { backend, uid, me } = useApp()
   const loc = useLocation()
-  const tab = new URLSearchParams(loc.search).get('tab')
-  const onHome = loc.pathname === '/'
+  const at = (p: string) => loc.pathname === p || (p !== '/' && loc.pathname.startsWith(p))
   const next = encodeURIComponent(loc.pathname + loc.search)
   const current = (on: boolean) => (on ? { 'aria-current': 'page' as const } : {})
   return (
@@ -15,14 +14,15 @@ export function Masthead() {
         <img src="/banner.jpg" alt="Election Town: 2026 midterm prediction pool" width={1858} height={302} />
       </Link>
       <nav className="menubar" aria-label="Main">
-        <Link to="/" {...current(onHome && tab !== 'settled')}>Markets</Link>
-        {me?.is_member && <Link to="/entries" {...current(loc.pathname === '/entries')}>My picks</Link>}
-        <Link to="/?tab=settled" {...current(onHome && tab === 'settled')}>Results</Link>
+        <Link to="/" {...current(at('/'))}>The Pool</Link>
+        <Link to="/ballot" {...current(at('/ballot') || at('/card'))}>My Ballot</Link>
+        <Link to="/side" {...current(at('/side') || at('/open'))}>Side Bets</Link>
         <span className="menubar-fill" />
         {uid ? (
           <details className="menubar-user">
             <summary>{me?.display_name ?? 'Account'} ▾</summary>
             <div className="menubar-menu">
+              {me?.is_member && <Link to="/entries">My money</Link>}
               {me?.is_admin && <Link to="/admin">Admin</Link>}
               <button type="button" onClick={() => backend.signOut()}>Sign out</button>
             </div>

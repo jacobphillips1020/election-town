@@ -11,11 +11,13 @@ test('migrations load; markets are public, picks and people are not', async () =
   const u = '00000000-0000-0000-0000-000000000001'
   await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'a@example.test', '{"display_name":"Ann"}')`, [u])
   // signed-in non-member: can browse markets, sees no entries or people
-  expect(await select(db, u, 'select * from public.markets')).toHaveLength(1)
+  // 12 main-pool picks plus the retired Control of Congress market
+  expect(await select(db, u, 'select * from public.markets')).toHaveLength(13)
   expect(await select(db, u, 'select * from public.entries')).toHaveLength(0)
   expect(await select(db, u, 'select * from public.members')).toHaveLength(0)
-  expect((await rpc<unknown[]>(db, u, 'list_markets')).length).toBe(1)
+  expect((await rpc<unknown[]>(db, u, 'list_markets')).length).toBe(13)
   // visitor: can browse, no table access to private data
-  expect((await rpc<unknown[]>(db, null, 'list_markets')).length).toBe(1)
+  expect((await rpc<unknown[]>(db, null, 'list_markets')).length).toBe(13)
+  expect((await rpc<{ markets: unknown[] }>(db, null, 'get_pool')).markets).toHaveLength(12)
   await expect(select(db, null, 'select * from public.entries')).rejects.toThrow(/permission denied/i)
 })

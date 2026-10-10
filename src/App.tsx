@@ -5,7 +5,10 @@ import { rememberDestination } from './lib'
 import { AuthPage } from './ui/Auth'
 import { JoinPage } from './ui/Join'
 import { Loading } from './ui/common'
-import { MarketsPage } from './ui/Markets'
+import { HomePage } from './ui/Home'
+import { BallotPage } from './ui/Ballot'
+import { CardPage } from './ui/Card'
+import { SideBetsPage } from './ui/SideBets'
 import { MarketPage } from './ui/MarketDetail'
 import { OpenMarketPage } from './ui/OpenMarket'
 import { MyEntriesPage } from './ui/MyEntries'
@@ -82,8 +85,8 @@ function NotMember() {
   return (
     <main className="page" id="main">
       <h1>The group is invite-only right now</h1>
-      <p>Ask the organizer for the invitation link and open it while signed in. You can keep browsing the markets meanwhile.</p>
-      <p><Link to="/">Browse markets</Link></p>
+      <p>Ask the organizer for the invitation link and open it while signed in. You can keep browsing meanwhile.</p>
+      <p><Link to="/">See the pool</Link></p>
     </main>
   )
 }
@@ -110,7 +113,10 @@ function Shell() {
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/join/:token" element={<JoinPage />} />
           {DevBoard && <Route path="/dev/board" element={<Suspense fallback={null}><DevBoard /></Suspense>} />}
-          <Route path="/" element={<MarketsPage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/ballot" element={<BallotPage />} />
+          <Route path="/card" element={<CardPage />} />
+          <Route path="/side" element={<SideBetsPage />} />
           <Route path="/m/:id" element={<MarketPage />} />
           <Route path="/open" element={<OpenMarketPage />} />
           <Route path="/propose" element={<Navigate to="/open" replace />} />

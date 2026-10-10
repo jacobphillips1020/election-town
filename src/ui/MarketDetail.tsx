@@ -1,550 +1,191 @@
-import { useMemo, useState } from 'react'
+// One pick's page: a main-ballot race or seat count, or a side bet.
+// Side bets are entered here (winner + two-way vote share); main-ballot picks are entered on the ballot.
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
-import { formatET, pct, plural, usd } from '../domain/format'
-import { allocate, groupForecast, type Draft } from '../domain/race'
-import { HOUSE_TOTAL, SENATE_TOTAL, meanSeats, remainder } from '../domain/seats'
-import type { Candidate, Entry, Market, MarketDetail, Payout, PollSnapshot, Run, Seats } from '../domain/types'
-import { useEffect } from 'react'
+import { lastName } from '../domain/board'
+import { formatET, plural, usd } from '../domain/format'
+import { checkPick, draftFromBallot, isSeat, raceLinks, sideOf, type PickDraft } from '../domain/pool'
+import type { Entry, Market, MarketDetail, Payout, PollSnapshot, Run } from '../domain/types'
 import { refreshMarket } from '../polling/client'
-import { Err, Loading, PartyTag, PhasePill, ShareBar, ShareButton, StripPlot, candColor, partyVar } from './common'
-import { PollingLink } from './RaceLink'
+import { Err, Loading, PhasePill, StripPlot, partyVar } from './common'
+import { Links, RacePick } from './Pick'
 
 export function MarketPage() {
   const { id } = useParams()
   const { backend } = useApp()
   const isNew = new URLSearchParams(useLocation().search).get('new') === '1'
   const { data, error, loading, reload } = useRpc<MarketDetail>('get_market', { p_id: id })
-  // Ask the server to refresh polling (it caches for 6 hours and is off unless enabled).
+  // Ask the server to refresh this race's polling (it caches for 6 hours).
   useEffect(() => {
     if (id) refreshMarket(backend, id).then((r) => r?.status === 'refreshed' && reload())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, backend])
   if (loading && !data) return <Loading />
-  if (!data) return <main className="page" id="main"><Err>{error ?? 'Market not found.'}</Err><Link to="/">Back to markets</Link></main>
+  if (!data) return <main className="page" id="main"><Err>{error ?? 'Not found.'}</Err><Link to="/">Back to the pool</Link></main>
   const m = data.market
   const phase = m.phase
-  const settled = phase === 'settled'
+  const back = m.featured ? { to: '/', label: 'The pool' } : { to: '/side', label: 'Side bets' }
 
   return (
     <main className="page" id="main">
-      <p className="small"><Link to="/">← Markets</Link></p>
+      <p className="small"><Link to={back.to}>← {back.label}</Link></p>
       <div className="reveal-head">
-        <h1 style={{ margin: 0 }}>{m.title}</h1>
+        <h1 style={{ margin: 0 }}>{m.kind === 'senate_seats' ? 'Senate: Republican seats' : m.kind === 'house_seats' ? 'House: Republican seats' : m.title}</h1>
         <PhasePill phase={phase} />
       </div>
       <p className="muted" style={{ marginTop: 6 }}>
-        {m.jurisdiction && <>{m.jurisdiction} · </>}
-        {phase === 'proposed' ? `Proposed by ${m.proposed_by_name ?? 'a member'}` : (
-          <>
-            {phase === 'open' ? `Entries close ${formatET(m.entry_deadline)}` : phase === 'canceled' ? 'Canceled' : `Entries closed ${formatET(m.entry_deadline)}`}
-            {' · '}{usd(m.buy_in_cents ?? 0)} buy-in
-            {' · '}{plural(m.entrants, 'entry', 'entries')} · {usd(m.pool_cents)} committed
-          </>
-        )}
+        {m.featured ? 'On the main ballot' : `Side bet${m.proposed_by_name ? ` opened by ${m.proposed_by_name}` : ''}`}
+        {' · '}{usd(m.buy_in_cents ?? 0)} a pick · {plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot
+        {' · '}{phase === 'open' ? `closes ${formatET(m.entry_deadline)}` : phase === 'canceled' ? 'canceled' : `closed ${formatET(m.entry_deadline)}`}
       </p>
-      <div style={{ marginBottom: 8 }}><ShareButton path={`/m/${m.id}`} title={m.title} /></div>
-      {isNew && phase === 'open' && !data.my_entry && (
-        <p className="callout" role="status">
-          <strong>Market open.</strong> Now place your bet below. You can change it any time until entries close {formatET(m.entry_deadline)}.
-        </p>
-      )}
-      <BasisBanner m={m} />
       <Err>{error}</Err>
 
-      {phase === 'proposed' && <ProposedNote m={m} />}
-      {phase === 'canceled' && <CanceledNote m={m} runs={data.runs} />}
-      {phase === 'open' && <EntrySection d={data} reload={reload} />}
-      {(phase === 'closed' || settled) && <Reveal d={data} />}
+      {isNew && phase === 'open' && !data.my_entry && (
+        <p className="callout" role="status"><strong>Side bet open.</strong> Make your pick below, then invite friends with the link.</p>
+      )}
+      {phase === 'canceled' && <p className="callout">Canceled{m.cancel_reason ? `: ${m.cancel_reason}` : ''}. Everyone&rsquo;s stake was returned.</p>}
+      {phase === 'open' && (m.featured ? <OnBallot d={data} /> : <SideEntry d={data} reload={reload} />)}
+      {phase === 'open' && !m.featured && <Invite m={m} />}
+      {(phase === 'closed' || phase === 'settled') && <Reveal d={data} />}
 
-      <PollingBlock d={data} />
+      {!isSeat(m) && m.kind !== 'congress' && <PollingBlock snap={data.polling.at_close ?? data.polling.latest} closed={phase !== 'open'} m={m} />}
       <Rules m={m} />
     </main>
   )
 }
 
-function BasisBanner({ m }: { m: Market }) {
-  if (m.kind === 'congress' || m.outcome_basis === 'single_round') return null
-  return (
-    <p className="callout warn">
-      <strong>Outcome basis: {m.outcome_basis === 'runoff_final' ? 'runoff' : 'ranked-choice final round'}.</strong>{' '}
-      This market settles on the eventual winner and their share of all valid votes in the decisive final round. It stays
-      awaiting results until that round is final.
-    </p>
-  )
-}
-
-function ProposedNote({ m }: { m: Market }) {
-  const { me } = useApp()
-  const admin = useAdminName()
-  return (
-    <section className="section">
-      <p>This race is waiting for {admin} to approve it and set the buy-in and entry deadline. Entries open after approval.</p>
-      <Candidates cands={m.candidates} hasOther={m.has_other} />
-      {me?.is_admin && <p><Link className="btn" to="/admin">Review in Admin</Link></p>}
-    </section>
-  )
-}
-
-function CanceledNote({ m, runs }: { m: Market; runs: Run[] }) {
-  const last = runs[runs.length - 1]
-  return (
-    <section className="section">
-      <p className="callout warn">
-        <strong>Canceled.</strong> {m.cancel_reason ?? last?.reason ?? ''} All commitments are returned and appear as refunds in My entries.
-      </p>
-    </section>
-  )
-}
-
-function Candidates({ cands, hasOther }: { cands: Candidate[]; hasOther: boolean }) {
-  return (
-    <ul className="mlist" style={{ marginBottom: 8 }}>
-      {cands.map((c) => (
-        <li key={c.id} className="mrow-top" style={{ padding: '8px 4px' }}>
-          <span>{c.name}</span><PartyTag party={c.party} />
-        </li>
-      ))}
-      {hasOther && <li className="muted" style={{ padding: '8px 4px' }}>Other candidates (remainder)</li>}
-    </ul>
-  )
-}
-
-/* -------------------------------------------------------------- polling */
-
-function snapshotSource(s: PollSnapshot) {
-  if (s.source_kind === 'fixture') return 'Demo fixture (invented numbers, not real polling)'
-  if (s.source_kind === 'manual') return `Entered manually · ${s.source_name}`
-  return s.source_name
-}
-
-function Snapshot({ s, markStale }: { s: PollSnapshot; markStale: boolean }) {
-  const ageDays = (Date.now() - new Date(s.as_of + 'T12:00:00Z').getTime()) / 86400e3
-  const stale = markStale && ageDays > 14
-  if (s.data.candidates.length === 0) {
-    return (
-      <div className="panel">
-        <p style={{ margin: 0 }}>No polling average has been published for this race yet.</p>
-        <p className="hint" style={{ margin: 0 }}>
-          Checked {s.as_of} · {snapshotSource(s)}
-          {s.source_url && <> · <a href={s.source_url} target="_blank" rel="noreferrer">Race page</a></>}
-        </p>
-      </div>
-    )
-  }
-  return (
-    <div className="panel">
-      <p className="small muted" style={{ margin: 0 }}>
-        {snapshotSource(s)} · as of {s.as_of}
-        {stale && <strong style={{ color: 'var(--warn)' }}> · stale</strong>}
-      </p>
-      <table className="t">
-        <tbody>
-          {s.data.candidates.map((c) => (
-            <tr key={c.name}>
-              <td>{c.name} {c.party && <PartyTag party={c.party} />}</td>
-              <td className="num">{c.pct.toFixed(1)}%</td>
-            </tr>
-          ))}
-          {s.data.undecided != null && <tr><td className="muted">Undecided</td><td className="num">{s.data.undecided.toFixed(1)}%</td></tr>}
-          {s.data.other != null && <tr><td className="muted">Other</td><td className="num">{s.data.other.toFixed(1)}%</td></tr>}
-        </tbody>
-      </table>
-      <p className="hint" style={{ margin: 0 }}>
-        Shown as published; not adjusted to total 100% and not a prediction of the final vote.
-        {s.data.note && <> {s.data.note}</>}
-        {s.source_url && <> <a href={s.source_url} target="_blank" rel="noreferrer">Source</a></>}
-      </p>
-    </div>
-  )
-}
-
-function PollingBlock({ d }: { d: MarketDetail }) {
-  const m = d.market
-  const { latest, at_close } = d.polling
-  if (m.kind === 'congress') {
-    return <section className="section"><h2>Polling context</h2><p className="muted">No seat projection connected.</p></section>
-  }
-  const link = m.polling_ref ? <PollingLink r={m.polling_ref} /> : null
-  if (m.phase === 'open' || m.phase === 'proposed') {
-    return (
-      <section className="section">
-        <h2>Polling context</h2>
-        {latest ? <Snapshot s={latest} markStale /> : <p className="muted">No polling average available.</p>}
-        {link}
-      </section>
-    )
-  }
-  const newer = latest && (!at_close || latest.id !== at_close.id) ? latest : null
-  return (
-    <section className="section">
-      <h2>Polling at close</h2>
-      {at_close ? <Snapshot s={at_close} markStale={false} /> : <p className="muted">The polling snapshot at close wasn&rsquo;t captured.</p>}
-      {newer && (<><h3>Newer polling (after close)</h3><Snapshot s={newer} markStale={false} /></>)}
-      {link}
-    </section>
-  )
-}
-
-/* -------------------------------------------------------------- rules */
-
-function Rules({ m }: { m: Market }) {
-  const admin = useAdminName()
-  const race = m.kind !== 'congress'
-  return (
-    <section className="section">
-      <h2>Rules</h2>
-      <ul style={{ paddingLeft: '1.1rem', margin: 0 }}>
-        <li>Entries close {formatET(m.entry_deadline)}. Until then you can change or withdraw your pick as often as you like, and it stays hidden; at close, everyone&rsquo;s picks are revealed.</li>
-        <li>Fixed buy-in of {usd(m.buy_in_cents ?? 0)}. No odds, no variable stakes, no payments in the app: {admin} records transfers by hand.</li>
-        {race ? (
-          <>
-            <li>Predict the winner and the winner&rsquo;s percentage of <em>all valid candidate votes</em> (not two-party share, not a win probability).</li>
-            <li>Only entries that picked the certified winner can win. Among those, the closest winner share takes the whole pool. Exact ties split it.</li>
-            <li>Settlement uses the certified winner and their certified vote share, rounded once to one decimal place. Election-night calls don&rsquo;t settle anything.</li>
-            <li>If nobody picked the winner, or fewer than two people enter, every commitment is returned.</li>
-          </>
-        ) : (
-          <>
-            <li>Predict final seats for the House (435) and Senate (100) in three categories each.</li>
-            <li>Score = half the sum of the absolute differences across all six counts. Off by 3 seats in the House and 1 in the Senate = 4 seats of error. Lowest error wins; ties split the pool.</li>
-          </>
-        )}
-        <li>Split pots are paid in whole cents. Leftover cents go to the earliest entries by ID, so tied winners can differ by one cent.</li>
-        {m.rules_note && <li><strong>Resolution:</strong> {m.rules_note}</li>}
-      </ul>
-    </section>
-  )
-}
-
-/* -------------------------------------------------------------- entry */
-
-function EntrySection({ d, reload }: { d: MarketDetail; reload: () => void }) {
-  const [editing, setEditing] = useState(false)
-  const m = d.market
+function OnBallot({ d }: { d: MarketDetail }) {
   const e = d.my_entry
-  if (e && !editing) return <Receipt m={m} e={e} onEdit={() => setEditing(true)} reload={reload} />
+  const m = d.market
+  const mine = e ? draftFromBallot({ [m.id]: { winner_id: e.winner_id, shares: e.shares as Record<string, number> | null, seats: e.seats as { r: number } | null } })[m.id] : null
   return (
-    <section className="section">
-      <h2>{e ? 'Edit your pick' : 'Make your pick'}</h2>
-      <p className="muted">Your pick stays hidden until entries close, and you can change or withdraw it any time before {formatET(m.entry_deadline)}.</p>
-      {m.kind === 'congress'
-        ? <SeatForm m={m} existing={e} onSaved={() => { setEditing(false); reload() }} onCancel={e ? () => setEditing(false) : undefined} />
-        : <RaceForm m={m} existing={e} onSaved={() => { setEditing(false); reload() }} onCancel={e ? () => setEditing(false) : undefined} />}
-    </section>
+    <div className="callout">
+      This pick is on the main ballot{mine ? <>: you picked <b>{mine.r ? `${mine.r} Republican seats` : `${m.candidates.find((c) => c.id === mine.winner)?.name} ${mine.share}%`}</b>.</> : '.'}
+      {' '}<Link to="/ballot">{mine ? 'Change it on your ballot' : 'Fill out your ballot'}</Link>
+      <span className="muted"> · Picks are sealed until the pool closes.</span>
+    </div>
   )
 }
 
-function sentence(m: Market, e: Entry) {
-  if (m.kind === 'congress' || !e.shares || !e.winner_id) {
-    const s = e.seats!
-    return `House ${s.house.d} D · ${s.house.r} R · ${s.house.o} Other. Senate ${s.senate.d} D · ${s.senate.r} R · ${s.senate.o} Other.`
-  }
-  const w = m.candidates.find((c) => c.id === e.winner_id)
-  return `You picked ${w?.name} with ${pct(e.shares[e.winner_id])} of the vote.`
-}
-
-function Receipt({ m, e, onEdit, reload }: { m: Market; e: Entry; onEdit: () => void; reload: () => void }) {
+function SideEntry({ d, reload }: { d: MarketDetail; reload: () => void }) {
   const { backend } = useApp()
-  const [error, setError] = useState('')
-  async function withdraw() {
-    if (!confirm('Withdraw your entry? You can enter again before entries close.')) return
-    try {
-      await backend.rpc('withdraw_entry', { p_market: m.id })
-      reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not withdraw.')
-      reload()
-    }
-  }
-  const dist = e.shares && m.kind !== 'congress'
-    ? [...m.candidates.map((c) => ({ id: c.id, name: c.name, t: e.shares![c.id], c: candColor(c) })), ...(m.has_other ? [{ id: 'other', name: 'Other candidates', t: e.shares.other ?? 0, c: 'var(--oth)' }] : [])]
-    : null
-  return (
-    <section className="section">
-      <div className="receipt reveal-in">
-        <h2 style={{ margin: '0 0 4px' }}>Your pick is in</h2>
-        <p style={{ margin: 0 }}><strong>{sentence(m, e)}</strong> Entry: {usd(e.commitment_cents)}.</p>
-        {dist && (
-          <>
-            <p className="small muted" style={{ margin: '8px 0 4px' }}>Your full prediction</p>
-            <ShareBar label="Your predicted vote shares" parts={dist.map((x) => ({ id: x.id, tenths: x.t, color: x.c, name: x.name }))} />
-            <p className="small">{dist.map((x) => `${x.name} ${pct(x.t)}`).join(' · ')}</p>
-          </>
-        )}
-        <p className="small muted" style={{ marginBottom: 0 }}>
-          Entries close {formatET(m.entry_deadline)}. Your pick stays hidden until then. You can change or withdraw it before that time.
-        </p>
-      </div>
-      <Err>{error}</Err>
-      <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn ghost" onClick={onEdit}>Edit pick</button>
-        <button className="btn ghost" onClick={withdraw}>Withdraw</button>
-      </div>
-    </section>
-  )
-}
-
-function draftFrom(m: Market, e: Entry | null): Draft & { open: boolean } {
-  if (!e?.shares || !e.winner_id) return { winnerId: null, winnerPct: '', opponentId: null, adjust: {}, open: false }
-  const others = m.candidates.filter((c) => c.id !== e.winner_id).sort((a, b) => (e.shares![b.id] ?? 0) - (e.shares![a.id] ?? 0))
-  const opp = others[0]?.id ?? null
-  const adjust: Record<string, string> = {}
-  for (const k of [...m.candidates.map((c) => c.id), ...(m.has_other ? ['other'] : [])]) {
-    if (k !== e.winner_id && k !== opp && (e.shares[k] ?? 0) > 0) adjust[k] = ((e.shares[k] ?? 0) / 10).toFixed(1)
-  }
-  return { winnerId: e.winner_id, winnerPct: (e.shares[e.winner_id] / 10).toFixed(1), opponentId: opp, adjust, open: Object.keys(adjust).length > 0 }
-}
-
-function RaceForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Entry | null; onSaved: () => void; onCancel?: () => void }) {
-  const { backend } = useApp()
-  const init = useMemo(() => draftFrom(m, existing), [m, existing])
-  const [draft, setDraft] = useState<Draft>(init)
-  const [adjustOpen, setAdjustOpen] = useState(init.open)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const a = allocate(m.candidates, m.has_other, draft)
-  const winner = m.candidates.find((c) => c.id === draft.winnerId)
-  const first = a.opponentId
-  const adjustKeys = [...m.candidates.map((c) => c.id), ...(m.has_other ? ['other'] : [])].filter((k) => k !== draft.winnerId && k !== first)
-
-  async function submit() {
-    if (!a.shares) return
-    setBusy(true)
-    setError('')
-    try {
-      await backend.rpc('submit_entry', { p_market: m.id, p_winner: draft.winnerId, p_shares: a.shares })
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your pick.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div>
-      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-        <legend style={{ fontWeight: 650 }}>Who wins?</legend>
-        <div className="seg">
-          {m.candidates.map((c) => (
-            <label key={c.id} className="opt" style={{ marginBottom: 0 }}>
-              <input type="radio" name="winner" checked={draft.winnerId === c.id} onChange={() => setDraft({ ...draft, winnerId: c.id, opponentId: null })} />
-              <span style={{ flex: 1 }}>{c.name}</span>
-              <PartyTag party={c.party} />
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <div className="field">
-        <label htmlFor="wpct">{winner ? `${winner.name}'s` : 'Winner’s'} share of all valid votes (%)</label>
-        <input id="wpct" inputMode="decimal" value={draft.winnerPct} placeholder="e.g. 51.8"
-          onChange={(e) => setDraft({ ...draft, winnerPct: e.target.value })} aria-describedby="wpct-h" />
-        <p className="hint" id="wpct-h">Share of all valid candidate votes, one decimal place. Plurality wins are fine; the winner doesn&rsquo;t need 50%. Settlement uses the certified result rounded once to one decimal place.</p>
-      </div>
-
-      {draft.winnerId && (
-        <div className="panel">
-          <p className="small muted" style={{ margin: '0 0 6px' }}>How the full 100% is allocated</p>
-          <table className="t">
-            <tbody>
-              {a.lines.map((l) => (
-                <tr key={l.id}>
-                  <td>{l.label}{l.auto && <span className="muted small"> · remainder</span>}</td>
-                  <td className="num">{l.tenths === null ? '—' : pct(l.tenths)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {a.shares && (
-            <ShareBar label="Predicted vote shares" parts={a.lines.map((l) => ({
-              id: l.id, tenths: l.tenths ?? 0, name: l.label,
-              color: l.id === 'other' ? 'var(--oth)' : candColor(m.candidates.find((c) => c.id === l.id)),
-            }))} />
-          )}
-          <button type="button" className="btn ghost small" style={{ marginTop: 8 }} onClick={() => setAdjustOpen(!adjustOpen)} aria-expanded={adjustOpen}>
-            {adjustOpen ? 'Hide adjustments' : 'Adjust other candidates'}
-          </button>
-          {adjustOpen && (
-            <div style={{ marginTop: 8 }}>
-              <div className="field">
-                <label htmlFor="opp">Principal opponent (gets the remainder)</label>
-                <select id="opp" value={a.opponentId ?? ''} onChange={(e) => setDraft({ ...draft, opponentId: e.target.value, adjust: {} })}>
-                  {m.candidates.filter((c) => c.id !== draft.winnerId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              {adjustKeys.map((k) => (
-                <div className="field" key={k}>
-                  <label htmlFor={`adj-${k}`}>{k === 'other' ? 'Other candidates' : m.candidates.find((c) => c.id === k)!.name} (%)</label>
-                  <input id={`adj-${k}`} inputMode="decimal" value={draft.adjust[k] ?? ''} placeholder="0.0"
-                    onChange={(e) => setDraft({ ...draft, adjust: { ...draft.adjust, [k]: e.target.value } })} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {a.errors.length > 0 && (draft.winnerId || draft.winnerPct) && <Err>{a.errors.join(' ')}</Err>}
-      {a.shares && winner && (
-        <p className="callout">
-          You picked <strong>{winner.name}</strong> with <strong>{pct(a.shares[winner.id])}</strong> of the vote. Entry: {usd(m.buy_in_cents ?? 0)}.
-        </p>
-      )}
-      <Err>{error}</Err>
-      <div className="row">
-        <EnterButton ready={!!a.shares} busy={busy} existing={!!existing} price={m.buy_in_cents ?? 0} onSubmit={submit} />
-        {onCancel && <button className="btn ghost" onClick={onCancel}>Cancel</button>}
-      </div>
-    </div>
-  )
-}
-
-function SeatBars({ s }: { s: Seats }) {
-  const bar = (label: string, c: { d: number; r: number; o: number }) => (
-    <div style={{ marginBottom: 8 }}>
-      <div className="small" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <strong>{label}</strong><span className="muted">D {c.d} · R {c.r} · Other {c.o}</span>
-      </div>
-      <ShareBar label={`${label} seats`} parts={[
-        { id: 'd', tenths: Math.max(c.d, 0), color: 'var(--dem)', name: 'Democratic' },
-        { id: 'o', tenths: Math.max(c.o, 0), color: 'var(--oth)', name: 'Other' },
-        { id: 'r', tenths: Math.max(c.r, 0), color: 'var(--rep)', name: 'Republican' },
-      ]} />
-    </div>
-  )
-  return <>{bar('House', s.house)}{bar('Senate', s.senate)}</>
-}
-
-function SeatForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Entry | null; onSaved: () => void; onCancel?: () => void }) {
-  const { backend } = useApp()
-  const s0 = existing?.seats
-  const [v, setV] = useState({
-    hd: s0 ? String(s0.house.d) : '', hr: s0 ? String(s0.house.r) : '',
-    sd: s0 ? String(s0.senate.d) : '', sr: s0 ? String(s0.senate.r) : '',
-  })
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const n = (x: string) => (/^\d+$/.test(x.trim()) ? parseInt(x, 10) : null)
-  const hd = n(v.hd), hr = n(v.hr), sd = n(v.sd), sr = n(v.sr)
-  const ho = hd !== null && hr !== null ? remainder(HOUSE_TOTAL, hd, hr) : null
-  const so = sd !== null && sr !== null ? remainder(SENATE_TOTAL, sd, sr) : null
-  const ok = ho !== null && so !== null && ho >= 0 && so >= 0
-  const seats: Seats | null = ok ? { house: { d: hd!, r: hr!, o: ho! }, senate: { d: sd!, r: sr!, o: so! } } : null
-
-  async function submit() {
-    if (!seats) return
-    setBusy(true)
-    setError('')
-    try {
-      await backend.rpc('submit_entry', { p_market: m.id, p_seats: seats })
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your pick.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  const input = (id: keyof typeof v, label: string) => (
-    <div className="field" key={id}>
-      <label htmlFor={`s-${id}`}>{label}</label>
-      <input id={`s-${id}`} inputMode="numeric" value={v[id]} onChange={(e) => setV({ ...v, [id]: e.target.value })} />
-    </div>
-  )
-  return (
-    <div>
-      <div className="grid2">
-        <div>
-          <h3>House · {HOUSE_TOTAL} seats</h3>
-          {input('hd', 'Democratic')}{input('hr', 'Republican')}
-          <p className="small">Other (independents): <strong>{ho ?? '—'}</strong>{ho !== null && ho < 0 && <span className="err"> Too many seats.</span>}</p>
-        </div>
-        <div>
-          <h3>Senate · {SENATE_TOTAL} seats</h3>
-          {input('sd', 'Democratic caucus')}{input('sr', 'Republican caucus')}
-          <p className="small">Other: <strong>{so ?? '—'}</strong>{so !== null && so < 0 && <span className="err"> Too many seats.</span>}</p>
-        </div>
-      </div>
-      {seats && <SeatBars s={seats} />}
-      <p className="hint">Senate totals include seats not up this year. Off by 3 seats in the House and 1 in the Senate = 4 seats of error.</p>
-      {seats && <p className="callout">Your seat prediction is ready. Entry: {usd(m.buy_in_cents ?? 0)}.</p>}
-      <Err>{error}</Err>
-      <div className="row">
-        <EnterButton ready={!!seats} busy={busy} existing={!!existing} price={m.buy_in_cents ?? 0} onSubmit={submit} />
-        {onCancel && <button className="btn ghost" onClick={onCancel}>Cancel</button>}
-      </div>
-    </div>
-  )
-}
-
-/** Members enter; visitors are sent to a 3-field sign-up and brought back to this race. */
-function EnterButton({ ready, busy, existing, price, onSubmit }: { ready: boolean; busy: boolean; existing: boolean; price: number; onSubmit: () => void }) {
   const { signedIn, isMember, signupPath } = useAccount()
   const loc = useLocation()
-  if (!signedIn) return <Link className="btn" to={signupPath(loc.pathname)}>Sign up to place a bet</Link>
-  if (!isMember) return <p className="callout warn">The group is invite-only right now. Ask the organizer for the invitation link to enter.</p>
+  const m = d.market
+  const e = d.my_entry
+  const [value, setValue] = useState<PickDraft | undefined>(
+    e?.winner_id && e.shares ? { winner: e.winner_id, share: ((e.shares as Record<string, number>)[e.winner_id] / 10).toFixed(1) } : undefined)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [saved, setSaved] = useState(false)
+  const check = checkPick(m, value)
+  const board = useRpc<{ race_type: string; state: string; district: string | null; special: boolean; polling: null | { dem_avg: number | null; rep_avg: number | null } & Record<string, unknown> }[]>('race_board')
+  const ref = m.polling_ref
+  const row = ref ? board.data?.find((r) => r.race_type === ref.race_type && r.state === ref.state && (r.district ?? null) === (ref.district ?? null) && r.special === ref.special) : undefined
+
+  async function save() {
+    if (!check.ok) return setErr(check.reason)
+    setBusy(true); setErr('')
+    try {
+      await backend.rpc('submit_entry', { p_market: m.id, p_winner: check.value.winner_id, p_shares: check.value.shares })
+      setSaved(true)
+      reload()
+    } catch (x) { setErr(x instanceof Error ? x.message : 'Could not save.') } finally { setBusy(false) }
+  }
+  async function withdraw() {
+    if (!confirm('Withdraw your pick? You can make a new one until it closes.')) return
+    setBusy(true)
+    try { await backend.rpc('withdraw_entry', { p_market: m.id }); setValue(undefined); reload() } catch (x) { setErr(x instanceof Error ? x.message : 'Could not withdraw.') } finally { setBusy(false) }
+  }
+
   return (
-    <button className="btn" disabled={!ready || busy} onClick={onSubmit}>
-      {existing ? 'Save changes' : `Place bet · ${usd(price)}`}
-    </button>
+    <section className="section">
+      <h2>{e ? 'Your pick' : 'Make your pick'}</h2>
+      <RacePick m={m} polling={(row?.polling as never) ?? null} value={value} onChange={(v) => { setSaved(false); setValue(v) }} />
+      <Err>{err}</Err>
+      {saved && <p className="ok" role="status">Saved. You can change it until {formatET(m.entry_deadline)}.</p>}
+      <div className="row" style={{ marginTop: 10 }}>
+        {!signedIn ? <Link className="btn" to={signupPath(loc.pathname)}>Sign up to make a pick</Link>
+          : !isMember ? <p className="callout warn">The group is invite-only right now. Ask the organizer for the invitation link.</p>
+          : <button className="btn" disabled={busy || !check.ok} onClick={save}>{e ? 'Save changes' : `Make pick · ${usd(m.buy_in_cents ?? 0)}`}</button>}
+        {e && <button className="btn ghost" disabled={busy} onClick={withdraw}>Withdraw</button>}
+      </div>
+      <p className="hint">Picks are sealed until this bet closes. You can change or withdraw yours until then.</p>
+    </section>
   )
 }
 
-/* -------------------------------------------------------------- reveal + results */
+function Invite({ m }: { m: Market }) {
+  const admin = useAdminName()
+  const [msg, setMsg] = useState('')
+  const url = `${window.location.origin}/m/${m.id}`
+  const text = `Side bet on ${m.title}: ${usd(m.buy_in_cents ?? 0)}, pick the winner and their vote share. Closes ${formatET(m.entry_deadline)}. Want in?`
+  async function go() {
+    try {
+      if (navigator.share) { await navigator.share({ title: m.title, text, url }); return }
+      await navigator.clipboard.writeText(`${text} ${url}`)
+      setMsg('Invite copied. Paste it into a text.')
+    } catch (e) {
+      if ((e as Error)?.name !== 'AbortError') setMsg(url)
+    }
+  }
+  return (
+    <section className="section">
+      <h2>Invite friends</h2>
+      <p className="small">Send the link to whoever you want in. Anyone in the group can join.</p>
+      <div className="row">
+        <button type="button" className="btn ghost" onClick={go}>Share invite</button>
+        <a className="btn ghost" href={`sms:?&body=${encodeURIComponent(`${text} ${url}`)}`}>Text it</a>
+      </div>
+      {msg && <p className="small ok" role="status">{msg}</p>}
+      <p className="hint">Want a different stake than {usd(m.buy_in_cents ?? 0)}? Ask {admin}; they can change it.</p>
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------- after the close */
 
 function Reveal({ d }: { d: MarketDetail }) {
   const { isMember, signedIn, signupPath } = useAccount()
   const loc = useLocation()
   const m = d.market
+  const settled = m.phase === 'settled'
+  const run = d.runs[d.runs.length - 1]
   if (!isMember) {
     return (
       <section className="section">
-        <div className="reveal-head"><h2 style={{ margin: 0 }}>Picks revealed</h2></div>
+        <h2>Picks revealed</h2>
         <p className="callout">
-          {plural(m.entrants, 'pick')} {m.entrants === 1 ? 'is' : 'are'} in. The picks and the group forecast are visible to the group.
-          {!signedIn && <> <Link to={signupPath(loc.pathname)}>Sign up</Link> to see who picked what.</>}
+          {plural(m.entrants, 'pick')} {m.entrants === 1 ? 'is' : 'are'} in; the group sees who picked what.
+          {!signedIn && <> <Link to={signupPath(loc.pathname)}>Sign up</Link> to see them.</>}
         </p>
       </section>
     )
   }
   const entries = d.entries ?? []
-  const settled = m.phase === 'settled'
-  const run = d.runs[d.runs.length - 1]
   const pay = new Map(d.payouts.map((p) => [p.entry_id, p]))
-
   return (
     <section className="section">
-      <div className="reveal-head">
-        <h2 style={{ margin: 0 }}>Picks revealed</h2>
-        <span className="muted small">{!settled && 'Awaiting final results'}</span>
-      </div>
+      <div className="reveal-head"><h2 style={{ margin: 0 }}>Picks revealed</h2>{!settled && <span className="muted small">awaiting final results</span>}</div>
       {settled && run && <ResultSummary m={m} run={run} runs={d.runs} />}
-      {m.kind === 'congress' ? <SeatReveal entries={entries} pay={pay} settled={settled} run={run} /> : (
-        <RaceReveal m={m} entries={entries} pay={pay} settled={settled} run={run} />
-      )}
-      {settled && <p className="hint">Gross payouts include each winner&rsquo;s original stake. Split pots are paid in whole cents; leftover cents go to the earliest entry IDs.</p>}
+      {isSeat(m) ? <SeatReveal m={m} entries={entries} pay={pay} settled={settled} run={run} /> : <RaceReveal m={m} entries={entries} pay={pay} settled={settled} run={run} />}
+      {settled && <p className="hint">Payouts include each winner&rsquo;s own stake. Split pots are paid in whole cents.</p>}
     </section>
   )
 }
 
 function ResultSummary({ m, run, runs }: { m: Market; run: Run; runs: Run[] }) {
-  const w = m.candidates.find((c) => c.id === run.result.winner_id)
   const r = run.result
+  const w = m.candidates.find((c) => c.id === r.winner_id)
+  const seats = r.seats as { r?: number } | undefined
   return (
     <div className="callout">
-      {m.kind === 'congress' && r.seats ? (
-        <p style={{ margin: 0 }}><strong>Final seats.</strong> House {r.seats.house.d} D · {r.seats.house.r} R · {r.seats.house.o} Other. Senate {r.seats.senate.d} D · {r.seats.senate.r} R · {r.seats.senate.o} Other.</p>
-      ) : (
-        <p style={{ margin: 0 }}><strong>{w?.name} won with {pct(r.winner_share_tenths ?? 0)}</strong> of all valid votes (certified, rounded to one decimal).</p>
-      )}
-      {run.outcome === 'no_winner_refund' && <p style={{ margin: '4px 0 0' }}>Nobody picked the winner, so every commitment was returned.</p>}
+      {isSeat(m) ? <p style={{ margin: 0 }}><strong>Republicans won {seats?.r} seats.</strong></p>
+        : <p style={{ margin: 0 }}><strong>{w?.name} won with {((r.winner_share_tenths ?? 0) / 10).toFixed(1)}%</strong> of the two-way vote (certified).</p>}
+      {run.outcome === 'no_winner_refund' && <p style={{ margin: '4px 0 0' }}>Nobody picked the winner, so everyone got their stake back.</p>}
       {r.source_url && <p className="small" style={{ margin: '4px 0 0' }}><a href={r.source_url} target="_blank" rel="noreferrer">Result source</a></p>}
-      {runs.length > 1 && (
-        <p className="small" style={{ margin: '4px 0 0' }}>
-          Corrected {runs.length - 1} {runs.length === 2 ? 'time' : 'times'}. Latest reason: {run.reason}
-        </p>
-      )}
+      {runs.length > 1 && <p className="small" style={{ margin: '4px 0 0' }}>Corrected {runs.length - 1}×. Latest reason: {run.reason}</p>}
     </div>
   )
 }
@@ -559,55 +200,41 @@ function payCell(p: Payout | undefined, run: Run | undefined, race: boolean) {
 
 function RaceReveal({ m, entries, pay, settled, run }: { m: Market; entries: Entry[]; pay: Map<string, Payout>; settled: boolean; run: Run | undefined }) {
   const { uid } = useApp()
-  const f = groupForecast(m.candidates, m.has_other, entries)
-  const name = (id: string | null) => (id === 'other' ? 'Other candidates' : m.candidates.find((c) => c.id === id)?.name ?? '')
-  const leader = m.candidates.find((c) => c.id === f.leaderId)
-  const runner = m.candidates.find((c) => c.id === f.runnerUpId)
-  const keys = [...m.candidates.map((c) => c.id), ...(m.has_other ? ['other'] : [])]
-
+  const n = entries.length
+  const name = (id: string | null) => m.candidates.find((c) => c.id === id)?.name ?? ''
+  const sharesOf = (e: Entry) => e.shares as Record<string, number> | null
   return (
     <>
-      <h3 style={{ marginTop: 14 }}>Group forecast</h3>
-      {f.n === 0 ? <p className="muted">No entries.</p> : (
+      {n === 0 ? <p className="muted">No picks.</p> : (
         <div className="reveal-in">
-          {leader && f.marginTenths !== null && (
-            <p style={{ marginBottom: 6 }}>
-              <strong>{leader.name}</strong> leads the group average at {pct(f.means[leader.id])}
-              {runner && <>, {f.marginTenths === 0 ? 'tied with' : `${(f.marginTenths / 10).toFixed(1)} points ahead of`} {runner.name}</>}.
-            </p>
-          )}
-          <ShareBar label="Group forecast vote shares" parts={keys.map((k) => ({
-            id: k, tenths: f.means[k], name: name(k), color: k === 'other' ? 'var(--oth)' : candColor(m.candidates.find((c) => c.id === k)),
-          }))} />
-          <p className="small" style={{ marginTop: 6 }}>{keys.map((k) => `${name(k)} ${pct(f.means[k])}`).join(' · ')}</p>
-          <p className="hint">Equal-weight average of everyone&rsquo;s full predicted vote shares. It is not a probability of winning and not a polling average.</p>
-
-          <h3>Spread of predictions</h3>
-          {m.candidates.map((c) => (
-            <div key={c.id} style={{ marginBottom: 6 }}>
-              <div className="small"><span style={{ color: partyVar(c.party), fontWeight: 700 }}>{c.name}</span> <span className="muted">· average {pct(f.means[c.id])}</span></div>
-              <StripPlot values={entries.filter((e) => e.shares).map((e) => (e.shares![c.id] ?? 0) / 10)} mean={f.means[c.id] / 10}
-                color={partyVar(c.party)} label={`Predicted share for ${c.name}`} />
-            </div>
-          ))}
-          <p className="hint">Each dot is one entrant; the dark line is the group average. The scale is zoomed to the range of predictions.</p>
+          {m.candidates.map((c) => {
+            const k = entries.filter((e) => e.winner_id === c.id).length
+            const vals = entries.filter((e) => sharesOf(e)).map((e) => (sharesOf(e)![c.id] ?? 0) / 10)
+            const mean = vals.reduce((a, b) => a + b, 0) / Math.max(1, vals.length)
+            return (
+              <div key={c.id} style={{ marginBottom: 8 }}>
+                <div className="small"><span style={{ color: partyVar(c.party), fontWeight: 800 }}>{c.name}</span>{' '}
+                  <span className="muted">· picked by {k} of {n} ({Math.round((k / n) * 100)}%) · average predicted share {mean.toFixed(1)}%</span></div>
+                {vals.length > 0 && <StripPlot values={vals} mean={mean} color={partyVar(c.party)} label={`Predicted share for ${c.name}`} />}
+              </div>
+            )
+          })}
+          <p className="hint">Each dot is one pick; the dark line is the group average.</p>
         </div>
       )}
-
       <h3>Everyone&rsquo;s picks</h3>
       <div className="scroll-x">
         <table className="t">
-          <thead>
-            <tr><th>Name</th><th>Picked</th><th className="num">Winner share</th>{settled && <th className="num">Error</th>}{settled && <th>Payout</th>}</tr>
-          </thead>
+          <thead><tr><th>Name</th><th>Picked</th><th className="num">Share</th>{settled && <th className="num">Off by</th>}{settled && <th>Payout</th>}</tr></thead>
           <tbody>
-            {entries.map((e, i) => {
+            {entries.map((e) => {
               const p = pay.get(e.id)
+              const s = sharesOf(e)
               return (
-                <tr key={e.id} className="reveal-in" style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}>
+                <tr key={e.id}>
                   <td>{e.display_name}{e.user_id === uid && <span className="muted"> (you)</span>}</td>
-                  <td>{name(e.winner_id)}</td>
-                  <td className="num">{e.shares && e.winner_id ? pct(e.shares[e.winner_id]) : '—'}</td>
+                  <td>{lastName(name(e.winner_id), name(e.winner_id))}</td>
+                  <td className="num">{s && e.winner_id ? `${(s[e.winner_id] / 10).toFixed(1)}%` : '—'}</td>
                   {settled && <td className="num">{p?.eligible && p.error_value !== null ? `${(p.error_value / 10).toFixed(1)} pts` : '—'}</td>}
                   {settled && <td>{payCell(p, run, true)}</td>}
                 </tr>
@@ -620,36 +247,31 @@ function RaceReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
   )
 }
 
-function SeatReveal({ entries, pay, settled, run }: { entries: Entry[]; pay: Map<string, Payout>; settled: boolean; run: Run | undefined }) {
+function SeatReveal({ m, entries, pay, settled, run }: { m: Market; entries: Entry[]; pay: Map<string, Payout>; settled: boolean; run: Run | undefined }) {
   const { uid } = useApp()
-  const mean = meanSeats(entries)
-  const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+  const vals = entries.map((e) => (e.seats as { r?: number } | null)?.r).filter((x): x is number => typeof x === 'number')
+  const mean = vals.reduce((a, b) => a + b, 0) / Math.max(1, vals.length)
+  const rows = [...entries].sort((a, b) => ((a.seats as { r: number }).r - (b.seats as { r: number }).r))
   return (
     <>
-      <h3 style={{ marginTop: 14 }}>Group forecast</h3>
-      {mean ? (
+      {vals.length > 0 && (
         <div className="reveal-in">
-          <SeatBars s={mean} />
-          <p className="small">
-            Average predicted seats. House {f(mean.house.d)} D · {f(mean.house.r)} R · {f(mean.house.o)} Other. Senate {f(mean.senate.d)} D · {f(mean.senate.r)} R · {f(mean.senate.o)} Other.
-          </p>
-          <p className="hint">Equal-weight average of everyone&rsquo;s seat predictions. It is not a probability of control.</p>
+          <p className="small">Group average: <b>{mean.toFixed(1)}</b> Republican seats ({m.kind === 'senate_seats' ? 'of 100' : 'of 435'}).</p>
+          <StripPlot values={vals} mean={mean} color="var(--rep)" label="Republican seat guesses" />
         </div>
-      ) : <p className="muted">No entries.</p>}
-      <h3>Everyone&rsquo;s picks</h3>
+      )}
+      <h3>Everyone&rsquo;s guesses</h3>
       <div className="scroll-x">
         <table className="t">
-          <thead><tr><th>Name</th><th>House D / R / O</th><th>Senate D / R / O</th>{settled && <th className="num">Error</th>}{settled && <th>Payout</th>}</tr></thead>
+          <thead><tr><th>Name</th><th className="num">Republican seats</th>{settled && <th className="num">Off by</th>}{settled && <th>Payout</th>}</tr></thead>
           <tbody>
-            {entries.map((e, i) => {
+            {rows.map((e) => {
               const p = pay.get(e.id)
-              const s = e.seats!
               return (
-                <tr key={e.id} className="reveal-in" style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}>
+                <tr key={e.id}>
                   <td>{e.display_name}{e.user_id === uid && <span className="muted"> (you)</span>}</td>
-                  <td>{s.house.d} / {s.house.r} / {s.house.o}</td>
-                  <td>{s.senate.d} / {s.senate.r} / {s.senate.o}</td>
-                  {settled && <td className="num">{p?.error_value ?? '—'} {p?.error_value === 1 ? 'seat' : 'seats'}</td>}
+                  <td className="num">{(e.seats as { r: number }).r}</td>
+                  {settled && <td className="num">{p?.error_value ?? '—'}</td>}
                   {settled && <td>{payCell(p, run, false)}</td>}
                 </tr>
               )
@@ -658,5 +280,40 @@ function SeatReveal({ entries, pay, settled, run }: { entries: Entry[]; pay: Map
         </table>
       </div>
     </>
+  )
+}
+
+/* -------------------------------------------------------------- polling + rules */
+
+function PollingBlock({ snap, closed, m }: { snap: PollSnapshot | null; closed: boolean; m: Market }) {
+  const c = snap?.data.candidates ?? []
+  return (
+    <section className="section">
+      <h2>{closed ? 'Polling at the close' : 'Polling'}</h2>
+      {c.length === 0 ? <p className="muted">No polling average yet.</p> : (
+        <>
+          <ul className="board-cands">
+            {c.map((x, i) => (
+              <li key={i}><span>{x.name}</span><span style={{ color: partyVar(x.party ?? sideOf(m.candidates[i])), fontWeight: 800 }}>{x.party ?? ''}</span><span className="mu-num">{x.pct.toFixed(1)}%</span></li>
+            ))}
+          </ul>
+          <p className="hint">{snap!.source_name}, as of {snap!.as_of}. {snap!.data.note}</p>
+        </>
+      )}
+      <Links links={raceLinks(m, snap?.source_url)} />
+    </section>
+  )
+}
+
+function Rules({ m }: { m: Market }) {
+  return (
+    <section className="section">
+      <h2>Rules</h2>
+      <p className="small">{m.rules_note}</p>
+      <p className="small muted">
+        {usd(m.buy_in_cents ?? 0)} a pick. Change or withdraw until {formatET(m.entry_deadline)}; picks are sealed until then.
+        Fewer than two picks at the close: everyone is refunded. No money moves through this site.
+      </p>
+    </section>
   )
 }

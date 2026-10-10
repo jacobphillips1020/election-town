@@ -4,6 +4,7 @@ import { useApp, useRpc } from '../data/context'
 import { formatET, fromETInput, pct, toETInput, usd } from '../domain/format'
 import { parseTenths } from '../domain/race'
 import { HOUSE_TOTAL, SENATE_TOTAL } from '../domain/seats'
+import type { Pool } from '../domain/pool'
 import type { Basis, Market, MarketDetail, Seats } from '../domain/types'
 import { Err, Loading } from './common'
 import { RaceLinkFields, refToDraft, toRef } from './RaceLink'
@@ -31,15 +32,15 @@ function useAction() {
 const dollarsToCents = (s: string): number | null => (/^\d+(\.\d{1,2})?$/.test(s.trim()) ? Math.round(parseFloat(s) * 100) : null)
 const centsToDollars = (c: number) => (c / 100).toFixed(2).replace(/\.00$/, '')
 
-type TabId = 'markets' | 'results' | 'ledger' | 'group'
+type TabId = 'pool' | 'markets' | 'results' | 'ledger' | 'group'
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'markets', label: 'Markets' },
+  { id: 'pool', label: 'Pool' }, { id: 'markets', label: 'Side bets' },
   { id: 'results', label: 'Results' }, { id: 'ledger', label: 'Ledger' }, { id: 'group', label: 'Group' },
 ]
 
 export function AdminPage() {
   const { me } = useApp()
-  const [tab, setTab] = useState<TabId>('markets')
+  const [tab, setTab] = useState<TabId>('pool')
   const list = useRpc<Market[]>('list_markets')
   if (!me?.is_admin) return <main className="page" id="main"><h1>Admin</h1><p>Admin only.</p></main>
   const markets = list.data ?? []
@@ -57,7 +58,8 @@ export function AdminPage() {
       <Err>{list.error}</Err>
       {list.loading && !list.data ? <Loading /> : (
         <>
-          {tab === 'markets' && <OpenMarkets markets={markets.filter((m) => m.phase === 'open')} reload={list.reload} />}
+          {tab === 'pool' && <PoolTab />}
+          {tab === 'markets' && <OpenMarkets markets={markets.filter((m) => m.phase === 'open' && !m.featured)} reload={list.reload} />}
           {tab === 'results' && <Results markets={markets.filter((m) => m.phase === 'closed' || m.phase === 'settled')} reload={list.reload} />}
           {tab === 'ledger' && <LedgerTab />}
           {tab === 'group' && <GroupTab />}
@@ -186,13 +188,39 @@ function PollingForm({ m, onDone }: { m: Market; onDone: () => void }) {
   )
 }
 
+function TermsForm({ m, onDone }: { m: Market; onDone: () => void }) {
+  const { backend } = useApp()
+  const [buyIn, setBuyIn] = useState(centsToDollars(m.buy_in_cents ?? 500))
+  const [when, setWhen] = useState(toETInput(m.entry_deadline!))
+  const a = useAction()
+  const cents = dollarsToCents(buyIn)
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? fromETInput(when) : null
+  return (
+    <div className="panel">
+      <div className="grid2">
+        <div className="field"><label htmlFor={`st-${m.id}`}>Stake ($)</label>
+          <input id={`st-${m.id}`} inputMode="decimal" value={buyIn} onChange={(e) => setBuyIn(e.target.value)} />
+          <p className="hint">Everyone already in will owe the new stake.</p></div>
+        <div className="field"><label htmlFor={`cl-${m.id}`}>Closes (New York time)</label>
+          <input id={`cl-${m.id}`} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+          <p className="hint">{iso ? formatET(iso) : 'Pick a date and time'} · before Election Day</p></div>
+      </div>
+      <Err>{a.error}</Err>
+      <button className="btn" disabled={a.busy || cents === null || !iso} onClick={() => a.run(async () => {
+        await backend.rpc('set_market_terms', { p_id: m.id, p_buy_in_cents: cents, p_deadline: iso })
+        onDone()
+      })}>Save stake and closing time</button>
+    </div>
+  )
+}
+
 function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => void }) {
   const { backend } = useApp()
   const a = useAction()
   const who = useRpc<{ open_entrants: { market_id: string; names: string[] }[] }>('admin_ledger')
   const entered = (id: string) => who.data?.open_entrants.find((x) => x.market_id === id)?.names ?? []
   const [open, setOpen] = useState<string | null>(null)
-  if (markets.length === 0) return <p className="muted">No open markets.</p>
+  if (markets.length === 0) return <p className="muted">No open side bets.</p>
   return (
     <>
       <Err>{a.error}</Err>
@@ -205,7 +233,8 @@ function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => voi
           </p>
           {m.entrants > 0 && <p className="small"><strong>Entered:</strong> {entered(m.id).join(', ') || '…'} <span className="muted">(picks stay sealed)</span></p>}
           <div className="row">
-            {m.entrants === 0 && <button className="btn ghost small" onClick={() => setOpen(open === m.id + 'e' ? null : m.id + 'e')}>Edit terms</button>}
+            <button className="btn ghost small" onClick={() => setOpen(open === m.id + 't' ? null : m.id + 't')}>Stake & closing time</button>
+            {m.entrants === 0 && <button className="btn ghost small" onClick={() => setOpen(open === m.id + 'e' ? null : m.id + 'e')}>Fix candidates</button>}
             {m.kind !== 'congress' && <button className="btn ghost small" onClick={() => setOpen(open === m.id + 'p' ? null : m.id + 'p')}>Record polling</button>}
             <button className="btn ghost small" disabled={a.busy} onClick={() => {
               const reason = prompt(`Cancel "${m.title}" and release every commitment? Reason:`)
@@ -213,9 +242,10 @@ function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => voi
               a.run(async () => { await backend.rpc('cancel_market', { p_id: m.id, p_reason: reason }); reload() })
             }}>Cancel market</button>
           </div>
+          {open === m.id + 't' && <TermsForm m={m} onDone={() => { setOpen(null); reload() }} />}
           {open === m.id + 'e' && <ApproveForm m={m} onDone={() => { setOpen(null); reload() }} label="Save terms" />}
           {open === m.id + 'p' && <PollingForm m={m} onDone={() => setOpen(null)} />}
-          {m.entrants > 0 && <p className="hint">Terms are locked after the first entry. To change them, cancel this market (everyone is refunded) and propose a replacement.</p>}
+          {m.entrants > 0 && <p className="hint">Candidates and rules lock with the first pick. Stake and closing time can still change.</p>}
         </section>
       ))}
     </>
@@ -238,13 +268,16 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const a = useAction()
   const congress = m.kind === 'congress'
+  const seatKind = m.kind === 'senate_seats' || m.kind === 'house_seats'
+  const [rSeats, setRSeats] = useState('')
   const n = (s: string) => (/^\d+$/.test(s.trim()) ? parseInt(s, 10) : NaN)
   const seatObj: Seats = { house: { d: n(seats.hd), r: n(seats.hr), o: n(seats.ho) }, senate: { d: n(seats.sd), r: n(seats.sr), o: n(seats.so) } }
   const tenths = parseTenths(share)
   const args = {
-    p_winner: congress ? null : winner, p_share_tenths: congress ? null : tenths, p_seats: congress ? seatObj : null, p_source_url: source.trim(),
+    p_winner: congress || seatKind ? null : winner, p_share_tenths: congress || seatKind ? null : tenths,
+    p_seats: congress ? seatObj : seatKind ? { r: n(rSeats) } : null, p_source_url: source.trim(),
   }
-  const ready = congress ? Object.values(seatObj.house).concat(Object.values(seatObj.senate)).every((x) => !Number.isNaN(x)) : winner && tenths !== null
+  const ready = seatKind ? !Number.isNaN(n(rSeats)) : congress ? Object.values(seatObj.house).concat(Object.values(seatObj.senate)).every((x) => !Number.isNaN(x)) : winner && tenths !== null
   const version = detail.data?.runs.length ?? 0
 
   async function enter() {
@@ -267,7 +300,10 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
       </p>
       {m.rules_note && <p className="small"><strong>Source policy:</strong> {m.rules_note}</p>}
 
-      {congress ? (
+      {seatKind ? (
+        <div className="field"><label>Certified Republican seats ({m.kind === 'senate_seats' ? 'of 100' : 'of 435'})</label>
+          <input inputMode="numeric" value={rSeats} onChange={(e) => setRSeats(e.target.value)} placeholder={m.kind === 'senate_seats' ? 'e.g. 49' : 'e.g. 210'} /></div>
+      ) : congress ? (
         <div className="grid2">
           <div><h3>House ({HOUSE_TOTAL})</h3>{seatField('hd', 'Democratic')}{seatField('hr', 'Republican')}{seatField('ho', 'Other')}</div>
           <div><h3>Senate ({SENATE_TOTAL})</h3>{seatField('sd', 'Democratic caucus')}{seatField('sr', 'Republican caucus')}{seatField('so', 'Other')}</div>
@@ -279,9 +315,9 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
               <option value="">Select…</option>
               {m.candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></div>
-          <div className="field"><label>Certified share of all valid votes (%)</label>
+          <div className="field"><label>{m.has_other ? 'Certified share of all valid votes (%)' : 'Certified share of the two-way vote (%)'}</label>
             <input inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} placeholder="e.g. 52.3" />
-            <p className="hint">Rounded once to one decimal; settlement uses this figure.</p></div>
+            <p className="hint">{m.has_other ? 'Rounded once to one decimal.' : 'Winner’s votes ÷ (votes for the two listed candidates), rounded once to one decimal.'} Settlement uses this figure.</p></div>
         </div>
       )}
       <div className="field"><label>Result source URL</label><input value={source} onChange={(e) => setSource(e.target.value)} placeholder="https://… (certified results)" /></div>
@@ -326,8 +362,8 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
               {preview.rows.map((r) => (
                 <tr key={r.entry_id}>
                   <td>{r.display_name}</td>
-                  <td>{congress ? 'In' : r.eligible ? 'Picked the winner' : 'Wrong winner'}</td>
-                  <td className="num">{r.error_value === null ? '—' : congress ? `${r.error_value} seats` : pct(r.error_value)}</td>
+                  <td>{congress || seatKind ? 'In' : r.eligible ? 'Picked the winner' : 'Wrong winner'}</td>
+                  <td className="num">{r.error_value === null ? '—' : congress || seatKind ? `${r.error_value} seats` : pct(r.error_value)}</td>
                   <td className="num">{r.gross_cents > 0 ? usd(r.gross_cents) : r.refund_cents > 0 ? `Refund ${usd(r.refund_cents)}` : '—'}</td>
                 </tr>
               ))}
@@ -491,6 +527,75 @@ function LedgerTab() {
   )
 }
 
+/* ------------------------------------------------------------ the main pool */
+
+function PoolTab() {
+  const { backend } = useApp()
+  const pool = useRpc<Pool>('get_pool')
+  const who = useRpc<{ open_entrants: { market_id: string; names: string[] }[] }>('admin_ledger')
+  const p = pool.data
+  const race = p?.markets.find((m) => m.kind === 'senate')
+  const seat = p?.markets.find((m) => m.kind === 'senate_seats')
+  const [when, setWhen] = useState('')
+  const [raceStake, setRaceStake] = useState('')
+  const [seatStake, setSeatStake] = useState('')
+  const [note, setNote] = useState<string | null>(null)
+  const a = useAction()
+  const b = useAction()
+  if (!p) return pool.error ? <Err>{pool.error}</Err> : <Loading />
+  const whenV = when || (p.deadline ? toETInput(p.deadline) : '')
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(whenV) ? fromETInput(whenV) : null
+  const rc = dollarsToCents(raceStake || centsToDollars(race?.buy_in_cents ?? 400))
+  const sc = dollarsToCents(seatStake || centsToDollars(seat?.buy_in_cents ?? 500))
+  const races = p.markets.filter((m) => m.kind === 'senate').length
+  const seats = p.markets.length - races
+  const names = who.data?.open_entrants.find((x) => x.market_id === race?.id)?.names ?? []
+  return (
+    <>
+      <section>
+        <h2>Closing time and stakes</h2>
+        <p className="muted small">
+          {p.ballots} {p.ballots === 1 ? 'ballot' : 'ballots'} in · {usd(p.pot_cents)} pot.
+          {names.length > 0 && <> Submitted: {names.join(', ')} <span className="muted">(picks stay sealed, even from you)</span>.</>}
+        </p>
+        {p.closed ? <p className="callout">The pool closed {formatET(p.deadline)}. Enter results on the Results tab.</p> : (
+          <>
+            <div className="grid2">
+              <div className="field"><label htmlFor="pool-close">Pool closes (New York time)</label>
+                <input id="pool-close" type="datetime-local" value={whenV} onChange={(e) => setWhen(e.target.value)} />
+                <p className="hint">{iso ? formatET(iso) : 'Pick a date and time'} · side bets closing at the same time move with it</p></div>
+              <div className="field"><label htmlFor="stake-race">Stake per Senate race ($)</label>
+                <input id="stake-race" inputMode="decimal" value={raceStake || centsToDollars(race?.buy_in_cents ?? 400)} onChange={(e) => setRaceStake(e.target.value)} />
+                <label htmlFor="stake-seat" style={{ marginTop: 8 }}>Stake per seat pick ($)</label>
+                <input id="stake-seat" inputMode="decimal" value={seatStake || centsToDollars(seat?.buy_in_cents ?? 500)} onChange={(e) => setSeatStake(e.target.value)} />
+                <p className="hint">Ballot = {races} × race + {seats} × seats = {rc !== null && sc !== null ? usd(races * rc + seats * sc) : '…'}. Ballots already in owe the new total.</p></div>
+            </div>
+            <Err>{a.error}</Err>
+            {a.note && <p className="ok" role="status">{a.note}</p>}
+            <button className="btn" disabled={a.busy || !iso || rc === null || sc === null} onClick={() => a.run(async () => {
+              await backend.rpc('set_pool_terms', { p_deadline: iso, p_race_buy_in_cents: rc, p_seat_buy_in_cents: sc })
+              pool.reload()
+              return 'Saved.'
+            })}>Save</button>
+          </>
+        )}
+      </section>
+      <section className="section">
+        <h2>Payment instructions</h2>
+        <p className="muted small">Shown to members right after they submit a ballot. For example: &ldquo;Venmo @your-handle $50 by Oct 30.&rdquo;</p>
+        <textarea value={note ?? p.pay_note ?? ''} maxLength={300} onChange={(e) => setNote(e.target.value)} />
+        <Err>{b.error}</Err>
+        {b.note && <p className="ok" role="status">{b.note}</p>}
+        <button className="btn" style={{ marginTop: 8 }} disabled={b.busy || note === null} onClick={() => b.run(async () => {
+          await backend.rpc('set_pay_note', { p_note: note })
+          pool.reload()
+          return 'Saved.'
+        })}>Save</button>
+      </section>
+    </>
+  )
+}
+
 /* ------------------------------------------------------------ group */
 
 function OpenSignup() {
@@ -552,36 +657,12 @@ function Roster() {
 }
 
 function GroupTab() {
-  const { backend, me, refreshMe } = useApp()
-  const g = me!.group!
+  const { backend } = useApp()
   const invites = useRpc<{ token: string; created_at: string; revoked_at: string | null }[]>('list_invites')
-  const [buyIn, setBuyIn] = useState(centsToDollars(g.default_buy_in_cents))
-  const [when, setWhen] = useState(toETInput(g.default_deadline))
-  const a = useAction()
   const b = useAction()
-  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? fromETInput(when) : null
-  const cents = dollarsToCents(buyIn)
   const link = (t: string) => `${window.location.origin}/join/${t}`
   return (
     <>
-      <section>
-        <h2>Defaults for new markets</h2>
-        <p className="muted small">Pre-fills the approval form. Only you can change dates, and defaults lock once any entry exists.</p>
-        <div className="grid2">
-          <div className="field"><label>Default buy-in ($)</label><input inputMode="decimal" value={buyIn} onChange={(e) => setBuyIn(e.target.value)} /></div>
-          <div className="field"><label>Default entries close (New York time)</label>
-            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
-            <p className="hint">{iso ? formatET(iso) : ''}</p></div>
-        </div>
-        <Err>{a.error}</Err>
-        {a.note && <p className="ok" role="status">{a.note}</p>}
-        <button className="btn" disabled={a.busy || cents === null || !iso} onClick={() => a.run(async () => {
-          await backend.rpc('set_group_defaults', { p_buy_in_cents: cents, p_deadline: iso })
-          refreshMe()
-          return 'Saved.'
-        })}>Save defaults</button>
-      </section>
-
       <OpenSignup />
       <Roster />
 

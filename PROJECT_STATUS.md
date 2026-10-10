@@ -1,57 +1,67 @@
 # Election Town: project status
 
-**v1 launched 2026-10-10 · https://election-town.vercel.app**
+**v2 (the main pool) built 2026-10-10 · https://election-town.vercel.app** (v1 launched earlier the same day)
 
 Friends' prediction pool for the Nov 2026 US midterms. Vite + React + TypeScript on Vercel (Hobby), Supabase
 (Auth + Postgres with row-level security) in project `election-town` (ref `gupgyvyxocsxqbwjyira`, us-east-1).
 Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys.
 
-## How it works (v1)
+## How it works (v2)
 
-- **Browse without an account:** markets, polling, entry counts/pools, the race board, the home "Closest races".
-- **Sign up = name + mobile + password** (no email; login id is derived from the phone, "Confirm email" is off).
-  Older email accounts (Jake's) sign in with their email. Open sign-up: new accounts join the group automatically;
-  Admin → Group has an invite-only switch.
-- **Open a market in one step:** pick a race on the board → "Open market & place bet". `launch_race` opens it on the
-  group defaults ($10 buy-in, entries close Nov 2 8:00 p.m. ET) with candidates (top two by polling) and rules from
-  the data. Only races with published candidate names can be opened. No approval queue. One market per race.
-- **Bets:** fixed buy-in, editable/withdrawable until close; sealed until the deadline (database time), then revealed
-  to members with the group forecast. Visitors never see picks, names on picks, balances, or phone numbers.
-- **Settlement, ledger, CSV, corrections, transfers:** Admin tabs Markets / Results / Ledger / Group.
-- **Polling:** PollingSource API (free, no key; see below). Race board refreshed daily by Vercel cron
-  (`/api/polling-cron`, 10:00 UTC) and on demand (≤ every 12 h); each market's snapshot stored when opened and
-  ≤ every 6 h; the "polling at close" snapshot is the last one before the deadline.
-- **Look:** Jake's banner artwork (`public/banner.jpg`) + navy menu bar; clean app below; 90s footer.
+- **One ballot, 12 picks, $50** (like the old Google Form, but with the polling next to every race):
+  - the 10 Senate races that decide control (expert battlegrounds: AK, GA, IA, ME, MI, NE, NH, NC, OH special, TX).
+    Pick the winner and their **share of the two-way vote**. $4 each; among those who picked the winner, the closest
+    share takes that race's pot (exact ties split; nobody right = refunds).
+  - **Republican seats** in the next Senate and the next House. $5 each; closest guess takes the pot.
+    (Republican seats, because Nebraska's contender Osborn is an independent: "Democratic seats" would be ambiguous.)
+  - The Senate seat pick starts at what your race picks add up to (31 not up + other races as polled + your 10) and
+    follows them until you set your own number.
+  - Picks save in the browser as you go; submit/resubmit/withdraw until the pool closes (all-or-nothing, in
+    `submit_ballot`). Visitors can fill it out before signing up; the draft survives sign-up.
+- **Home page** = the visual: tile map of all 35 Senate races (polls / my picks / the group), balance-of-power bars
+  (now, polls, Polymarket, you, the group), House bars + polled-district strip, the 12 picks with pots. Tap a state for
+  polling, expert ratings (Cook / Inside Elections / Sabato via PollingSource), pot, research links.
+- **After the close:** the map switches to the group's composite (shaded by % of ballots agreeing), group averages,
+  you vs the group, and the 2024-style grid of every ballot (anonymized, members only; "You" outlined).
+- **Share my picks** (`/card`): a fun map card of your own picks (banner art, shares on each state, Senate/House
+  verdicts). Download PDF (hand-built, `src/domain/pdf.ts`) or PNG, or share from a phone. Picks are otherwise sealed.
+- **Side bets** (`/side`): any other race, opened by a member from the race board, $5, same pick (winner + two-way
+  share). Invite friends by share sheet / text. Admin can change a side bet's stake or closing time.
+- **Admin**: Pool tab (closing time, stakes, payment instructions shown after submitting; who has submitted, never
+  what), Side bets, Results (race: winner + two-way share; seats: Republican count), Ledger, Group.
+- Sealed until close by database time; visitors never see picks, names on picks, balances or phone numbers.
+
+## Data sources
+
+- **PollingSource** (free, no key): race averages + candidate names + expert ratings, daily cron + on demand (≤12 h;
+  race details ≤3 days). Coverage 2026-10-10: 27/35 Senate, 81 House districts.
+- **Polymarket** public feed (no key): "Republican Senate/House seats after the 2026 midterms" price ranges → median
+  seats; "Which party wins the Senate/House" → control odds. Stored in `seat_forecasts` (≤6 h, daily cron).
+  Model forecasts (DDHQ, Silver Bulletin, Poliwave) block automated access or are paywalled.
+- "Now" = today's Senate (53 R); the House row is the 2024 result (220 R). Hard-coded in `src/domain/senate.ts`.
 
 ## Code map
 
-- `supabase/migrations/` (8 files, all applied to the live project, in order): tables/RLS → logic → privileges →
-  race catalog → race board → public browsing/open sign-up → one-step launch → open leftover proposals.
-  Scoring and settlement live only in SQL.
-- `src/` app; `src/data/` live (Supabase) and demo (in-browser Postgres) backends behind one `rpc()`.
-- `api/polling.ts` (member-only lookups/refresh), `api/polling-cron.ts` (daily job), `src/polling/*` (adapter, board, refresh).
-- Tests: `npm test` (92): DB authorization for visitors/non-members/members/admin, sealed picks, deadline boundary,
-  scoring/ties/pennies, idempotent settlement, ledger, launch rules, polling adapter/board/refresh, catalog.
-- `vite.config.ts` fails a production build if the Supabase settings are missing (prevents a silent demo deploy).
+- `supabase/migrations/` (9 files; the 9th, `20261011000001_main_pool.sql`, is the v2 pool). Scoring and settlement
+  live only in SQL.
+- `src/ui/Home.tsx` (dashboard), `Ballot.tsx`, `Card.tsx` + `cardSvg.ts`, `SideBets.tsx`, `MarketDetail.tsx`,
+  `Pick.tsx` (race + seat pickers), `TileMap.tsx`, `Balance.tsx`, `Admin.tsx`.
+- `src/domain/pool.ts` (ballot draft, colors, links), `senate.ts` (holders, seat math), `tiles.ts`, `pdf.ts`.
+- `src/polling/forecast.ts` (Polymarket), `board.ts` (+ expert ratings); `api/polling.ts`, `api/polling-cron.ts`.
+- Demo mode (no env vars): real migrations in PGlite + `src/demo/polling.sql` (public data snapshot) + `seed.sql`
+  (fictional people). Dev only: `?demo=closed` shows the pool after close; `?demo=open` goes back.
+- Tests: `npm test` (116).
 
 ## Keys and settings
 
 - Vercel env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (= the **publishable** key, type Config),
   `SUPABASE_SERVICE_ROLE_KEY` (= the **sb_secret** key, type Secret). Local: `.env.local` (git-ignored).
-- Supabase legacy JWT keys (anon/service_role) are **disabled** (one was exposed in a screenshot on 2026-10-10).
-- Forgotten passwords: friend texts Jake → run `supabase/seed/reset_member_password.sql` in the SQL editor.
-
-## PollingSource
-
-`/api/v1/races` and `/api/v1/race` return JSON with no key. About page ties API access to Pro ($15/mo); Terms are
-silent on caching. Owner decision: use it free, small cached volume, pay only if asked. Coverage 2026-10-10:
-27/35 Senate, 29/36 governor, 80/435 House; D and R averages only; 122 races have both candidate names.
+- Supabase legacy JWT keys are **disabled**. Forgotten passwords: `supabase/seed/reset_member_password.sql`.
+- Live SQL: `supabase db query --linked --project-ref gupgyvyxocsxqbwjyira -f <file>` (CLI is logged in).
 
 ## Known gaps / next ideas
 
-- **Test the phone sign-up with a second real number** before sharing widely (not testable by Claude).
-- Unpolled races and polled races without names can't be opened (FEC API could supply names later).
-- Independents/third parties are covered only by "Other candidates" (not pickable as winner).
-- Vercel's bot checkpoint may challenge scripted requests; browsers and Vercel cron are fine.
-- `/api/polling-cron` is callable without a secret (harmless: rate-limited by freshness). Optionally set `CRON_SECRET`.
-- Optional: custom domain (Vercel → Settings → Domains), courtesy email to PollingSource.
+- Test phone sign-up with a second real number before sharing widely.
+- Per-race Polymarket odds on the ballot (needs a slug per race).
+- The slate is fixed in the migration; swapping a race means a small SQL change before the first ballots.
+- Optional: `CRON_SECRET`, custom domain, courtesy email to PollingSource.

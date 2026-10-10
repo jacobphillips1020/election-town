@@ -1,4 +1,4 @@
-import type { Chamber, Entry, Seats } from './types'
+import type { Chamber, Seats } from './types'
 
 export const HOUSE_TOTAL = 435
 export const SENATE_TOTAL = 100
@@ -21,7 +21,7 @@ export function seatError(pred: Seats, actual: Seats): number {
   return (diff(pred.house, actual.house) + diff(pred.senate, actual.senate)) / 2
 }
 
-export function meanSeats(entries: Pick<Entry, 'seats'>[]): Seats | null {
+export function meanSeats(entries: { seats: Seats | null }[]): Seats | null {
   const rows = entries.filter((e) => e.seats).map((e) => e.seats!)
   if (!rows.length) return null
   const avg = (get: (s: Seats) => number) => rows.reduce((t, s) => t + get(s), 0) / rows.length

@@ -35,7 +35,8 @@ const CANDS = [{ name: 'Garcia', party: 'D' }, { name: 'Whitfield', party: 'R' }
 const inOneHour = () => new Date(Date.now() + 3600e3).toISOString()
 
 let raceN = 0
-const SENATE_STATES = 'AL AK AR CO DE GA ID IL IA KS KY LA ME MA MI MN MS MT NE NH NJ NM NC OK OR RI SC SD TN TX VA WV WY'.split(' ')
+// Senate races that are not on the main ballot (those already have their markets).
+const SENATE_STATES = 'AL AR CO DE ID IL KS KY LA MA MN MS MT NJ NM OK OR RI SC SD TN VA WV WY'.split(' ')
 
 // Test fixture: a proposed market with named candidates (free-form proposals no longer exist in the API),
 // each on a different real race so the one-market-per-race rule is respected.
@@ -132,7 +133,8 @@ describe('authorization', () => {
     const mid = await openRace({ proposer: U.maya })
     const t = inOneHour()
     await expect(rpc(db, U.maya, 'approve_market', { p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'x', p_buy_in_cents: 1000, p_deadline: t })).rejects.toThrow(/admin only/i)
-    await expect(rpc(db, U.maya, 'set_group_defaults', { p_buy_in_cents: 1000, p_deadline: t })).rejects.toThrow(/admin only/i)
+    await expect(rpc(db, U.maya, 'set_pool_terms', { p_deadline: t, p_race_buy_in_cents: 400, p_seat_buy_in_cents: 500 })).rejects.toThrow(/admin only/i)
+    await expect(rpc(db, U.maya, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: t })).rejects.toThrow(/admin only/i)
     await expect(rpc(db, U.maya, 'create_invite')).rejects.toThrow(/admin only/i)
     await expect(rpc(db, U.maya, 'cancel_market', { p_id: mid, p_reason: 'x' })).rejects.toThrow(/admin only/i)
     await expect(rpc(db, U.maya, 'confirm_settlement', { p_market: mid })).rejects.toThrow(/admin only/i)
@@ -242,17 +244,17 @@ describe('closing boundary and locked terms', () => {
     expect(m.entries).toHaveLength(2)
   })
 
-  test('terms lock with the first entry; closed markets cannot be reopened', async () => {
+  test('what a pick means locks with the first entry; stakes and closing times may move; closed markets cannot be reopened', async () => {
     const mid = await openRace()
     const edit = (over: Record<string, unknown>) => rpc(db, U.jake, 'approve_market', {
       p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'Certified state canvass.',
       p_buy_in_cents: 1000, p_deadline: inOneHour(), ...over,
     })
-    await edit({ p_buy_in_cents: 2000 }) // allowed: no entries yet
+    await edit({ p_rules_note: 'Changed before anyone entered.' }) // allowed: no entries yet
     await pick(U.maya, mid, 'c1', 520, 480)
-    await expect(edit({ p_buy_in_cents: 1500 })).rejects.toThrow(/locked/i)
-    await expect(edit({})).rejects.toThrow(/locked/i)
-    await expect(db.exec(`update public.markets set entry_deadline = entry_deadline + interval '1 day' where id = '${mid}'`)).rejects.toThrow(/locked/i)
+    await expect(edit({ p_rules_note: 'Certified state canvass, again.' })).rejects.toThrow(/locked/i)
+    await expect(edit({ p_candidates: [{ name: 'Garcia', party: 'D' }, { name: 'Someone Else', party: 'R' }] })).rejects.toThrow(/locked/i)
+    await rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1500, p_deadline: inOneHour() })
 
     const empty = await openRace()
     await backdate(empty)
@@ -262,19 +264,15 @@ describe('closing boundary and locked terms', () => {
     })).rejects.toThrow(/reopened|cannot be edited/i)
   })
 
-  test('deadlines must be in the future and before Election Day; defaults are admin-only and lock', async () => {
+  test('deadlines must be in the future and before Election Day', async () => {
     const mid = await proposedMarket('house', 'TX', '01', [{ id: 'c1', name: 'A', party: 'D' }, { id: 'c2', name: 'B', party: 'R' }])
     const base = { p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'x', p_buy_in_cents: 1000 }
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
     await rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T01:00:00Z' })
-    await rpc(db, U.jake, 'set_group_defaults', { p_buy_in_cents: 1500, p_deadline: '2026-11-03T00:00:00Z' })
-    const cong = (await rpc<{ id: string; kind: string; entry_deadline: string }[]>(db, U.maya, 'list_markets')).find((m) => m.kind === 'congress')!
-    expect(new Date(cong.entry_deadline).toISOString()).toBe('2026-11-03T00:00:00.000Z')
-    await rpc(db, U.maya, 'submit_entry', {
-      p_market: cong.id, p_seats: { house: { d: 220, r: 215, o: 0 }, senate: { d: 49, r: 50, o: 1 } },
-    })
-    await expect(rpc(db, U.jake, 'set_group_defaults', { p_buy_in_cents: 1000, p_deadline: '2026-11-02T00:00:00Z' })).rejects.toThrow(/locked/i)
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 50, p_deadline: '2026-11-03T00:00:00Z' })).rejects.toThrow(/between \$1/i)
   })
 })
 
@@ -284,7 +282,7 @@ describe('entry validation', () => {
     await expect(pick(U.maya, mid, 'c1', 520, 470)).rejects.toThrow(/total exactly/i)
     await expect(pick(U.maya, mid, 'c1', 500, 500)).rejects.toThrow(/largest/i)
     await expect(pick(U.maya, mid, 'c1', 400, 600)).rejects.toThrow(/largest/i)
-    await expect(pick(U.maya, mid, 'c9', 520, 480)).rejects.toThrow(/listed candidates/i)
+    await expect(pick(U.maya, mid, 'c9', 520, 480)).rejects.toThrow(/pick a winner/i)
     await expect(rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480 } })).rejects.toThrow(/cover every/i)
     await expect(rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520.5, c2: 479.5, other: 0 } })).rejects.toThrow()
     await expect(rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_seats: { house: { d: 1, r: 1, o: 433 }, senate: { d: 1, r: 1, o: 98 } }, p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow()
@@ -307,17 +305,10 @@ describe('entry validation', () => {
     expect((await rpc<{ market: { entrants: number } }>(db, U.maya, 'get_market', { p_id: mid })).market.entrants).toBe(0)
   })
 
-  test('seat entries must total 435 and 100', async () => {
-    const cong = (await rpc<{ id: string; kind: string }[]>(db, U.maya, 'list_markets')).find((m) => m.kind === 'congress')!
-    const seats = (h: number[], s: number[]) => ({ house: { d: h[0], r: h[1], o: h[2] }, senate: { d: s[0], r: s[1], o: s[2] } })
-    await expect(rpc(db, U.maya, 'submit_entry', { p_market: cong.id, p_seats: seats([220, 214, 0], [49, 50, 1]) })).rejects.toThrow(/House seats must total 435/)
-    await expect(rpc(db, U.maya, 'submit_entry', { p_market: cong.id, p_seats: seats([220, 215, 0], [49, 50, 2]) })).rejects.toThrow(/Senate seats must total 100/)
-    await rpc(db, U.maya, 'submit_entry', { p_market: cong.id, p_seats: seats([220, 215, 0], [49, 50, 1]) })
-  })
-
-  test('only one live Control of Congress market, and congress cannot be proposed', async () => {
+  test('one live market per seat count; seat markets and congress cannot be launched', async () => {
     await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'congress', p_state: 'OH' })).rejects.toThrow(/Senate, House, or governor/i)
-    await expect(db.exec(`insert into public.markets (kind, title) values ('congress', 'Dup')`)).rejects.toThrow(/one_live_congress_market|duplicate/i)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'senate_seats', p_state: 'OH' })).rejects.toThrow(/Senate, House, or governor/i)
+    await expect(db.exec(`insert into public.markets (kind, title) values ('senate_seats', 'Dup')`)).rejects.toThrow(/one_live_seat_market|duplicate/i)
   })
 })
 
@@ -392,8 +383,9 @@ describe('scoring', () => {
     expect((await db.query(`select count(*)::int c from public.settlement_runs where market_id = $1`, [one])).rows[0]).toEqual({ c: 1 })
   })
 
-  test('seat markets: half the sum of six absolute differences; ties split', async () => {
-    const cong = (await rpc<{ id: string; kind: string }[]>(db, U.maya, 'list_markets')).find((m) => m.kind === 'congress')!
+  test('retired Control of Congress scoring still works: half the sum of six absolute differences', async () => {
+    const cong = (await db.query<{ id: string }>(`insert into public.markets (kind, title, status, buy_in_cents, entry_deadline)
+      values ('congress', 'Old Congress', 'open', 1000, clock_timestamp() + interval '1 hour') returning id`)).rows[0]
     const seats = (h: number[], s: number[]) => ({ house: { d: h[0], r: h[1], o: h[2] }, senate: { d: s[0], r: s[1], o: s[2] } })
     const enter = (who: string, h: number[], s: number[]) => rpc(db, who, 'submit_entry', { p_market: cong.id, p_seats: seats(h, s) })
     await enter(U.maya, [220, 215, 0], [49, 50, 1])   // actual -> error 0
@@ -542,14 +534,14 @@ describe('launching a market', () => {
     const mid = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'az', p_district: '1' })
     const m = (await rpc<Record<string, any>[]>(db, U.dev, 'list_markets')).find((x) => x.id === mid)!
     expect(m).toMatchObject({
-      title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'open', outcome_basis: 'single_round', has_other: true,
-      buy_in_cents: 1000, polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
+      title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'open', outcome_basis: 'single_round', has_other: false,
+      buy_in_cents: 500, polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
     })
     expect(new Date(m.entry_deadline).toISOString()).toBe('2026-11-03T01:00:00.000Z')
     expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
-    expect(m.rules_note).toMatch(/certified results from Arizona/)
+    expect(m.rules_note).toMatch(/two-candidate vote.*certified results published by Arizona/)
     // the launcher can bet straight away
-    await rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })
+    await rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480 } })
   })
 
   test('the outcome basis follows the state\'s election rules', async () => {
@@ -570,10 +562,10 @@ describe('launching a market', () => {
     await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/haven't been published/i)
     await boardNames('house:UT:02:0', 'Pat Example', 'Lee Sample')
     await rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '02' })
-    await expect(rpc(db, U.dev, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/already has a market/i)
+    await expect(rpc(db, U.dev, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/already has a bet/i)
     await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'OH' })).rejects.toThrow(/not on the 2026 ballot/i)
-    await boardNames('senate:OH::1', 'Pat Example', 'Lee Sample')
-    await rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'OH', p_special: true })
+    await boardNames('senate:FL::1', 'Pat Example', 'Lee Sample')
+    await rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'FL', p_special: true })
   })
 
   test('no launching after the election\'s entries have closed; proposals and free-form markets are gone', async () => {
@@ -593,7 +585,7 @@ describe('launching a market', () => {
 
 describe('candidate placeholders', () => {
   test('a race with "to be confirmed" candidates cannot be opened until names are real', async () => {
-    const mid = await proposedMarket('senate', 'IA', null, [{ id: 'c1', name: 'Democratic nominee (to be confirmed)', party: 'D' }, { id: 'c2', name: 'Republican nominee (to be confirmed)', party: 'R' }])
+    const mid = await proposedMarket('senate', 'MN', null, [{ id: 'c1', name: 'Democratic nominee (to be confirmed)', party: 'D' }, { id: 'c2', name: 'Republican nominee (to be confirmed)', party: 'R' }])
     const approve = (c: unknown) => rpc(db, U.jake, 'approve_market', {
       p_id: mid, p_candidates: c, p_has_other: true, p_basis: 'single_round', p_rules_note: 'Certified canvass.',
       p_buy_in_cents: 1000, p_deadline: inOneHour(),
@@ -624,11 +616,10 @@ describe('leftover proposals', () => {
   test('markets from the old propose step open on the defaults, with names from the board', async () => {
     const mid = await proposedMarket('house', 'NY', '17', [{ id: 'c1', name: 'Democratic nominee (to be confirmed)', party: 'D' }, { id: 'c2', name: 'Republican nominee (to be confirmed)', party: 'R' }])
     await boardNames('house:NY:17:0', 'Pat Example', 'Lee Sample')
-    const fix = MIGRATIONS[MIGRATIONS.length - 1]
-    expect(fix).toMatch(/old two-step/)
+    const fix = MIGRATIONS.find((m) => /old two-step/.test(m))!
     await db.exec(fix)
     const m = (await rpc<Record<string, any>[]>(db, U.maya, 'list_markets')).find((x) => x.id === mid)!
-    expect(m).toMatchObject({ phase: 'open', buy_in_cents: 1000 })
+    expect(m).toMatchObject({ phase: 'open', buy_in_cents: 500 })
     expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
   })
 })

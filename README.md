@@ -2,10 +2,12 @@
 
 A friends' prediction pool for the November 2026 US midterms: https://election-town.vercel.app
 
-Anyone can browse; signing up (name, mobile, password) is needed to open a market or place a bet. Pick a race from
-the race board (live polling averages and candidates), open its market, and place a fixed buy-in bet you can change
-until entries close. Picks stay sealed until close, then everyone's picks and a group forecast are revealed.
-Money never moves in the app; the admin records transfers by hand.
+One ballot, 12 picks, $50: the 10 Senate races that decide control (winner + share of the two-way vote) and
+Republican seats in the next Senate and House. The home page is a live map and balance of power (polling, expert
+ratings, Polymarket seat forecasts); after the close it shows what the group picked. Anyone can browse and fill out a
+ballot; signing up (name, mobile, password) is needed to submit. Side bets cover any other race ($5). Picks stay sealed
+until close; your own picks card (PDF/PNG) is yours to share. Money never moves in the app; the admin records
+transfers by hand.
 
 Status and decisions: see `PROJECT_STATUS.md`.
 
@@ -30,9 +32,10 @@ sign-in. To connect a real Supabase project, copy `.env.example` to `.env.local`
 
 ## Privacy: what is and isn't protected
 
-- **Public:** markets, polling, entry counts and pool sizes, the race board.
-- **Members only, enforced in the database:** everyone's picks and who made them (and only after entries close),
-  balances, payouts by person. Phone numbers are visible only to their owner and the admin.
+- **Public:** markets, polling, forecasts, ballot counts and pot sizes, the race board; after the close, the group's
+  split for each pick (no names).
+- **Members only, enforced in the database:** everyone's picks and who made them (and only after entries close; the
+  ballot grid is anonymized), balances, payouts by person. Phone numbers are visible only to their owner and the admin.
 - The admin can see who has entered an open market (to chase payments) but not what they picked.
 - **Not cryptographic secrecy.** Whoever controls the Supabase project (dashboard access or the `sb_secret` key)
   can read everything. Never put the secret key in a `VITE_*` variable or the repo.
@@ -40,5 +43,5 @@ sign-in. To connect a real Supabase project, copy `.env.example` to `.env.local`
 
 ## Live setup (done 2026-10-10)
 
-Supabase project with the 8 migrations applied in order, Confirm email off, legacy JWT keys disabled; admin
+Supabase project with the migrations applied in order, Confirm email off, legacy JWT keys disabled; admin
 bootstrapped with `supabase/seed/bootstrap_admin.sql`. Vercel env vars: see `PROJECT_STATUS.md`.

@@ -3,9 +3,22 @@
 import type { Backend, Persona } from './backend'
 import { AUTH_STUB, MIGRATIONS } from './migrations'
 import { rpc as pgRpc } from './pgliteRpc'
+import pollingSql from '../demo/polling.sql?raw'
 import seedSql from '../demo/seed.sql?raw'
 
-const DB_NAME = 'idb://election-town-demo-v5'
+// Dev only: open with ?demo=closed to see the pool after it closes (picks revealed); ?demo=open to go back.
+const SCENARIO_KEY = 'et-demo-scenario'
+function scenario(): 'open' | 'closed' {
+  try {
+    const q = new URLSearchParams(window.location.search).get('demo')
+    if (import.meta.env.DEV && (q === 'open' || q === 'closed')) localStorage.setItem(SCENARIO_KEY, q)
+    return import.meta.env.DEV && localStorage.getItem(SCENARIO_KEY) === 'closed' ? 'closed' : 'open'
+  } catch {
+    return 'open'
+  }
+}
+const SCENARIO = scenario()
+const DB_NAME = `idb://election-town-demo-v6${SCENARIO === 'closed' ? '-closed' : ''}`
 const ACTOR_KEY = 'et-demo-actor'
 
 export const PERSONAS: Persona[] = [
@@ -25,7 +38,9 @@ async function open() {
   if (!has.rows[0].ok) {
     await db.exec(AUTH_STUB)
     for (const m of MIGRATIONS) await db.exec(m)
+    await db.exec(pollingSql)
     await db.exec(seedSql)
+    if (SCENARIO === 'closed') await db.exec(`update public.markets set entry_deadline = now() - interval '1 hour' where featured`)
   }
   return db
 }
@@ -73,7 +88,7 @@ export async function createDemoBackend(): Promise<Backend> {
     actAs,
     async resetDemo() {
       await db.close()
-      indexedDB.deleteDatabase('/pglite/election-town-demo-v5')
+      indexedDB.deleteDatabase(`/pglite/${DB_NAME.slice('idb://'.length)}`)
       window.location.reload()
     },
     signIn: async () => demoOnly(),

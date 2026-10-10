@@ -130,7 +130,7 @@ function RaceRow({ r, open, onToggle, onOpen, busy }: {
         <span className="board-top">
           <span className="board-title">{label}</span>
           <span className="board-chips">
-            {r.market && <span className="rate rate-pool">Market open</span>}
+            {r.market && <span className="rate rate-pool">{r.market.featured ? 'On the ballot' : 'Side bet open'}</span>}
             {p?.rating && <RatingChip rating={p.rating} />}
           </span>
         </span>
@@ -157,19 +157,19 @@ function RaceRow({ r, open, onToggle, onOpen, busy }: {
             </ul>
           )}
           {r.market ? (
-            <p className="small" style={{ margin: '0 0 10px' }}>This race already has a market. Head over to place your bet.</p>
+            <p className="small" style={{ margin: '0 0 10px' }}>{r.market.featured ? 'This race is on the main ballot.' : 'This race already has a side bet. Head over to make your pick.'}</p>
           ) : named ? (
             <p className="small" style={{ margin: '0 0 10px' }}>
-              Opens with the top two by polling plus &ldquo;Other candidates&rdquo;. {basisSentence(r.state)} You can change your pick until entries close.
+              Opens with the top two by polling: pick the winner and their share of the two-way vote. {basisSentence(r.state)} You can change your pick until it closes.
             </p>
           ) : (
             <p className="small" style={{ margin: '0 0 10px' }}>The candidates for this race haven&rsquo;t been published yet, so its market can&rsquo;t be opened.</p>
           )}
           <div className="row">
             {r.market ? (
-              <Link className="btn" to={`/m/${r.market.id}`}>Place a bet</Link>
+              <Link className="btn" to={r.market.featured ? '/ballot' : `/m/${r.market.id}`}>{r.market.featured ? 'Go to my ballot' : 'Make my pick'}</Link>
             ) : named ? (
-              <button type="button" className="btn" disabled={busy} onClick={onOpen}>{busy ? 'Opening…' : 'Open market & place bet'}</button>
+              <button type="button" className="btn" disabled={busy} onClick={onOpen}>{busy ? 'Opening…' : 'Open side bet & make my pick'}</button>
             ) : null}
             <a className="btn ghost" href={p?.page ?? pollingPageUrl({ race_type: r.race_type, state: r.state, district: r.district, special: r.special })}
               target="_blank" rel="noreferrer">Polling page ↗</a>
