@@ -1,4 +1,4 @@
--- Called It: privileges. Default-deny, then grant exactly what the app needs.
+-- Election Town: privileges. Default-deny, then grant exactly what the app needs.
 -- Clients may read a few tables (RLS filters rows) and call RPC functions. They may not
 -- write to tables directly.
 

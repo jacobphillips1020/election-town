@@ -1,4 +1,4 @@
--- Called It: tables, guards, and row-level security.
+-- Election Town: tables, guards, and row-level security.
 -- Runs on Supabase Postgres (auth schema provided by Supabase). Plain Postgres otherwise.
 --
 -- Security model in one paragraph:
@@ -16,7 +16,7 @@ create schema if not exists app;
 
 create table public.group_settings (
   id boolean primary key default true check (id),
-  name text not null default 'Called It',
+  name text not null default 'Election Town',
   default_buy_in_cents int not null default 1000 check (default_buy_in_cents between 100 and 100000),
   -- Nov 2, 2026 8:00 p.m. America/New_York (EST, UTC-5) = Nov 3 01:00 UTC
   default_deadline timestamptz not null default '2026-11-03 01:00:00+00',

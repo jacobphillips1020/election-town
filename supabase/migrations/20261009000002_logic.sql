@@ -1,4 +1,4 @@
--- Called It: scoring, settlement, ledger, and the RPC surface the app calls.
+-- Election Town: scoring, settlement, ledger, and the RPC surface the app calls.
 -- Scoring lives only here (one implementation); the UI previews by calling these functions.
 
 -- ---------------------------------------------------------------- scoring + settlement
