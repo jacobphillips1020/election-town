@@ -29,6 +29,11 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
   you vs the group, and the 2024-style grid of every ballot (anonymized, members only; "You" outlined).
 - **Share my picks** (`/card`): a fun map card of your own picks (banner art, shares on each state, Senate/House
   verdicts). Download PDF (hand-built, `src/domain/pdf.ts`) or PNG, or share from a phone. Picks are otherwise sealed.
+- **Invite friends**: "Want to up the stakes?" band on the home page and after submitting (share sheet / text /
+  copy) with ready-made copy incl. the live pot and close time. Link previews: Open Graph tags in `index.html` +
+  `public/og.jpg` (1200×630, made from the banner; checked with Facebook/WhatsApp/Slack bot user agents).
+- **Payment note** (Admin → Pool): live note is "Venmo @jake-phillips-3 $50 before picks close."; a Venmo @handle
+  becomes a link. Shown after submitting and on the home page for members who are in.
 - **Side bets** (`/side`): any other race, opened by a member from the race board, $5, same pick (winner + two-way
   share). Invite friends by share sheet / text. Admin can change a side bet's stake or closing time.
 - **Admin**: Pool tab (closing time, stakes, payment instructions shown after submitting; who has submitted, never
