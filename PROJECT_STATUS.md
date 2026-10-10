@@ -1,6 +1,7 @@
 # Election Town: project status
 
-**v2 (the main pool) built 2026-10-10 · https://election-town.vercel.app** (v1 launched earlier the same day)
+**v2 (the main pool) live 2026-10-10 · https://election-town.vercel.app** (v1 launched earlier the same day).
+Migration 9 applied to the live project; pool closes **Tue Oct 27, 11:59 p.m. ET** (editable in Admin → Pool).
 
 Friends' prediction pool for the Nov 2026 US midterms. Vite + React + TypeScript on Vercel (Hobby), Supabase
 (Auth + Postgres with row-level security) in project `election-town` (ref `gupgyvyxocsxqbwjyira`, us-east-1).
@@ -10,14 +11,17 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
 
 - **One ballot, 12 picks, $50** (like the old Google Form, but with the polling next to every race):
   - the 10 Senate races that decide control (expert battlegrounds: AK, GA, IA, ME, MI, NE, NH, NC, OH special, TX).
-    Pick the winner and their **share of the two-way vote**. $4 each; among those who picked the winner, the closest
-    share takes that race's pot (exact ties split; nobody right = refunds).
+    Pick the winner and their **two-way vote share** (winner's votes ÷ votes for the two listed candidates; 48–42 with
+    10% others = 53.3–46.7). $4 each; among those who picked the winner, the closest share takes that race's pot
+    (exact ties split; nobody right = refunds).
   - **Republican seats** in the next Senate and the next House. $5 each; closest guess takes the pot.
     (Republican seats, because Nebraska's contender Osborn is an independent: "Democratic seats" would be ambiguous.)
   - The Senate seat pick starts at what your race picks add up to (31 not up + other races as polled + your 10) and
     follows them until you set your own number.
-  - Picks save in the browser as you go; submit/resubmit/withdraw until the pool closes (all-or-nothing, in
-    `submit_ballot`). Visitors can fill it out before signing up; the draft survives sign-up.
+  - **Always $50 all in.** Any pick can be left blank: its stake still goes into that pot, but it can't win.
+    Submit what you have (at least one pick) and finish or change it until the close; the UI says so everywhere.
+  - Picks save in the browser as you go (per person; only used if newer than the submitted ballot). Submitting is
+    all-or-nothing per save (`submit_ballot`). Visitors can fill it out before signing up; the draft survives sign-up.
 - **Home page** = the visual: tile map of all 35 Senate races (polls / my picks / the group), balance-of-power bars
   (now, polls, Polymarket, you, the group), House bars + polled-district strip, the 12 picks with pots. Tap a state for
   polling, expert ratings (Cook / Inside Elections / Sabato via PollingSource), pot, research links.
