@@ -3,8 +3,9 @@
 Private prediction pool for friends on the Nov 2026 US midterms. Vite + React + TypeScript;
 Supabase (Auth + Postgres with row-level security) for the live version. Last updated 2026-10-09.
 
-**State: local build complete and tested (53 tests). Private GitHub repo created. Not deployed. Live integration
-waits on Supabase setup (see Next steps).**
+**State (2026-10-09): built and tested (53 tests). Private GitHub repo: jacobphillips1020/election-town. Supabase project
+`election-town` (us-east-1) created, migrations applied, Confirm email OFF, admin bootstrapped. Runs locally against the
+live project (`.env.local`, git-ignored). Not yet deployed to Vercel.**
 
 ## What exists
 
@@ -49,15 +50,16 @@ waits on Supabase setup (see Next steps).**
 
 ## Next steps (Jake)
 
-1. Create Supabase project; turn **Confirm email OFF**; add redirect URL; run migrations; bootstrap admin.
-2. Put the URL + anon key in `.env.local`; sign up; run `bootstrap_admin.sql`; create an invite link.
-3. Import the repo into Vercel (env: the two VITE vars, `POLLINGSOURCE_ENABLED=true`, `SUPABASE_SERVICE_ROLE_KEY`).
-4. Optional: email PollingSource.
+1. Create the invitation link (Admin → Group) and test sign-up on a phone.
+2. Deploy: Vercel → Add New → Project → `election-town` → env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+   (same as `.env.local`) → Deploy.
+3. Optional polling: add `POLLINGSOURCE_ENABLED=true` and `SUPABASE_SERVICE_ROLE_KEY` (Vercel only, never in git or
+   a VITE_ variable) so snapshots are stored and the "at close" polling is captured. Do this well before Nov 2.
+4. Optional: courtesy email to PollingSource.
 
 ## Not verified (could not run here)
 
-- Real Supabase sign-up with Confirm email off (expected: immediate session; metadata `phone` lands in
-  `member_contacts` via trigger; trigger covered by tests against a stand-in auth schema).
+- Phone landing in `member_contacts` for the real sign-up (covered by tests against a stand-in auth schema; check Admin → Group → Members).
 - `extensions.crypt` in `reset_member_password.sql` on a real Supabase project.
 - The Vercel function in `api/` (never deployed).
 - Native share sheet on a phone (copy-link fallback implemented).
