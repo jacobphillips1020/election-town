@@ -12,11 +12,16 @@ import type { PollingRef } from '../domain/states.js'
 
 export class RaceMismatch extends Error {}
 
+/** Used when the source gives an average but no candidate names. The organizer must replace these before a race opens. */
+export const PLACEHOLDER_D = 'Democratic nominee (to be confirmed)'
+export const PLACEHOLDER_R = 'Republican nominee (to be confirmed)'
+
 export function buildRaceUrl(ref: PollingRef): string {
   const u = new URL('https://pollingsource.com/api/v1/race')
   u.searchParams.set('race_type', ref.race_type)
   u.searchParams.set('state', ref.state.toUpperCase())
-  if (ref.race_type === 'house' && ref.district) u.searchParams.set('district', ref.district === 'AL' ? 'AL' : String(parseInt(ref.district, 10)))
+  // The vendor numbers at-large seats 0.
+  if (ref.race_type === 'house' && ref.district) u.searchParams.set('district', ref.district === 'AL' ? '0' : String(parseInt(ref.district, 10)))
   return u.toString()
 }
 
@@ -39,13 +44,23 @@ export function normalizeRace(json: unknown, ref: PollingRef): Snapshot | null {
   if (!r) throw new RaceMismatch('Unexpected response shape')
   const sameDistrict =
     ref.race_type !== 'house' ||
-    String(r.district ?? '').toUpperCase() === (ref.district === 'AL' ? 'AL' : String(parseInt(ref.district ?? '', 10)))
+    String(r.district ?? '') === (ref.district === 'AL' ? '0' : String(parseInt(ref.district ?? '', 10)))
   if (r.race_type !== ref.race_type || String(r.state).toUpperCase() !== ref.state.toUpperCase() || !sameDistrict ||
       Boolean(r.is_special) !== Boolean(ref.special)) {
     throw new RaceMismatch('The polling source returned a different race than the one requested')
   }
   if (typeof r.dem_average !== 'number' || typeof r.rep_average !== 'number') return null
-  const first = (json as Raw).recent_polls?.polls?.[0]
+  // Candidate names: the most common Democratic/Republican pair across the recent polls.
+  const tally = (key: 'dem_candidate' | 'rep_candidate') => {
+    const c = new Map<string, number>()
+    for (const p of (json as Raw).recent_polls?.polls ?? []) {
+      const n = (p[key] ?? '').trim()
+      if (n) c.set(n, (c.get(n) ?? 0) + 1)
+    }
+    return [...c.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  }
+  const demName = tally('dem_candidate')
+  const repName = tally('rep_candidate')
   const count = Number(r.poll_count ?? 0)
   return {
     source_name: (json as Raw).attribution?.cite_as ?? 'PollingSource average (pollingsource.com)',
@@ -53,8 +68,8 @@ export function normalizeRace(json: unknown, ref: PollingRef): Snapshot | null {
     as_of: String(r.last_poll_date ?? '').slice(0, 10),
     data: {
       candidates: [
-        { name: first?.dem_candidate || 'Democratic candidate', party: 'D', pct: r.dem_average },
-        { name: first?.rep_candidate || 'Republican candidate', party: 'R', pct: r.rep_average },
+        { name: demName || PLACEHOLDER_D, party: 'D', pct: r.dem_average },
+        { name: repName || PLACEHOLDER_R, party: 'R', pct: r.rep_average },
       ],
       note: `Unweighted mean of the newest week of polls (${count} poll${count === 1 ? '' : 's'}). Democratic and Republican only; other candidates and undecided aren't published.`,
     },

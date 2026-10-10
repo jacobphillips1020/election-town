@@ -7,7 +7,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { PollingRef } from '../src/domain/states.js'
 import { RaceMismatch, fetchRace } from '../src/polling/pollingsource.js'
-import { REFRESH_MS, refreshSnapshot } from '../src/polling/refresh.js'
+import { REFRESH_MS, refreshSnapshot, type Cand } from '../src/polling/refresh.js'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -47,8 +47,11 @@ export default {
         const db = createClient(url, service, { auth: { persistSession: false } })
         const status = await refreshSnapshot({
           getMarket: async (id) => {
-            const { data } = await db.from('markets').select('kind, polling_ref').eq('id', id).single()
-            return data as { kind: string; polling_ref: PollingRef | null } | null
+            const { data } = await db.from('markets').select('kind, status, candidates, polling_ref').eq('id', id).single()
+            return data as { kind: string; status: string; candidates: Cand[]; polling_ref: PollingRef | null } | null
+          },
+          setCandidates: async (id, candidates) => {
+            await db.from('markets').update({ candidates }).eq('id', id).eq('status', 'proposed')
           },
           lastProviderFetch: async (id) => {
             const { data } = await db.from('polling_snapshots').select('fetched_at').eq('market_id', id)

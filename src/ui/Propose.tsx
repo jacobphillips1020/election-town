@@ -1,54 +1,48 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAdminName, useApp, useRpc } from '../data/context'
-import { stateName, suggestTitle } from '../domain/states'
-import type { Basis, Market } from '../domain/types'
-import { refreshMarket } from '../polling/client'
+import { RACES, basisSentence, raceLabel, raceTitle, searchRaces, toPollingRef, type RaceEntry } from '../domain/races'
+import { pollingPageUrl } from '../domain/states'
+import type { Market } from '../domain/types'
+import { lookupRace, refreshMarket, type Lookup } from '../polling/client'
 import { Err } from './common'
-import { EMPTY_REF, LookupPreview, RaceLinkFields, toRef } from './RaceLink'
 
-type Row = { name: string; party: string }
-
+/** The only input is the race. Everything else is derived by the system (see propose_race in the database). */
 export function ProposePage() {
   const { backend } = useApp()
   const admin = useAdminName()
   const nav = useNavigate()
   const existing = useRpc<Market[]>('list_markets')
-  const [kind, setKind] = useState('senate')
-  const [link, setLink] = useState(EMPTY_REF)
-  const [title, setTitle] = useState('')
-  const [titleEdited, setTitleEdited] = useState(false)
-  const [rows, setRows] = useState<Row[]>([{ name: '', party: 'D' }, { name: '', party: 'R' }])
-  const [hasOther, setHasOther] = useState(true)
-  const [basis, setBasis] = useState<Basis>('single_round')
-  const [note, setNote] = useState('')
+  const [query, setQuery] = useState('')
+  const [race, setRace] = useState<RaceEntry | null>(null)
+  const [found, setFound] = useState<{ loading: boolean; res: Lookup | null }>({ loading: false, res: null })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const ref = toRef(kind, link)
-  const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const matches = useMemo(() => searchRaces(query), [query])
 
   useEffect(() => {
-    if (!titleEdited && ref) setTitle(suggestTitle(kind, ref.state, ref.district ?? ''))
-  }, [kind, ref?.state, ref?.district, titleEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!race) return
+    setFound({ loading: true, res: null })
+    let live = true
+    lookupRace(backend, toPollingRef(race)).then((res) => live && setFound({ loading: false, res }))
+    return () => { live = false }
+  }, [race, backend])
 
-  const dup = ref && (existing.data ?? []).find((m) =>
-    m.polling_ref && m.phase !== 'rejected' && m.phase !== 'canceled' && m.polling_ref.race_type === ref.race_type &&
-    m.polling_ref.state === ref.state && m.polling_ref.district === ref.district && m.polling_ref.special === ref.special)
+  const snap = found.res?.snapshot ?? null
+  const dup = race && (existing.data ?? []).find((m) => m.polling_ref && ['proposed', 'open', 'settled'].includes(m.phase) &&
+    m.polling_ref.race_type === race.kind && m.polling_ref.state === race.state &&
+    m.polling_ref.district === race.district && m.polling_ref.special === race.special)
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!ref) return setError('Choose the state' + (kind === 'house' ? ' and district' : '') + ' so the race can be matched to its polling average.')
+  async function submit() {
+    if (!race) return
     setBusy(true)
     setError('')
     try {
-      const id = await backend.rpc<string>('propose_market', {
-        p_kind: kind, p_title: title.trim(),
-        p_jurisdiction: kind === 'house' ? `${stateName(ref.state)} ${ref.state}-${ref.district}` : stateName(ref.state),
-        p_candidates: rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), party: r.party })),
-        p_has_other: hasOther, p_basis: basis, p_note: note.trim(), p_polling_ref: ref,
+      const id = await backend.rpc<string>('propose_race', {
+        p_race_type: race.kind, p_state: race.state, p_district: race.district, p_special: race.special,
       })
-      // Polling starts the moment a race is proposed (bounded wait; the page also retries on open).
+      // Polling and candidate names load the moment a race is proposed (bounded wait; the page retries on open).
       await Promise.race([refreshMarket(backend, id), new Promise((r) => setTimeout(r, 6000))])
       nav(`/m/${id}`)
     } catch (err) {
@@ -61,64 +55,67 @@ export function ProposePage() {
   return (
     <main className="page" id="main" style={{ maxWidth: '36rem' }}>
       <h1>Propose a race</h1>
-      <p className="muted">{admin} reviews proposals and sets the buy-in and entry deadline. Senate, House, and governor races only.</p>
-      <form onSubmit={submit}>
+      <p className="muted">
+        Pick one of the {RACES.length} races on the 2026 ballot. Candidates, polling and settlement rules are filled in
+        automatically; {admin} confirms the race and sets the buy-in and entry deadline.
+      </p>
+
+      {!race ? (
         <div className="field">
-          <label htmlFor="kind">Race type</label>
-          <select id="kind" value={kind} onChange={(e) => { setKind(e.target.value); setLink({ ...link, district: '' }) }}>
-            <option value="senate">U.S. Senate</option>
-            <option value="house">U.S. House</option>
-            <option value="governor">Governor</option>
-          </select>
+          <label htmlFor="race-search">Find a race</label>
+          <input id="race-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. Ohio senate, Arizona governor, Utah 2" autoComplete="off" />
+          {query.trim() && matches.length === 0 && (
+            <p className="hint">No 2026 race matches. Not every state has a Senate or governor race this year; every state has House seats.</p>
+          )}
+          <ul className="mlist" style={{ marginTop: 8 }}>
+            {matches.map((r) => (
+              <li key={`${r.kind}${r.state}${r.district}${r.special}`}>
+                <button type="button" className="mrow" style={{ width: '100%', textAlign: 'left', background: 'none', border: 0, font: 'inherit', cursor: 'pointer' }}
+                  onClick={() => setRace(r)}>
+                  <span className="mrow-title">{raceLabel(r)}</span>
+                  <span className="muted small"> · {r.polled ? 'polling average available' : 'no polling average yet'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!query.trim() && <p className="hint">Type a state and a race: &ldquo;Utah 2&rdquo; for its 2nd House district, &ldquo;Ohio senate&rdquo;, &ldquo;Arizona gov&rdquo;.</p>}
         </div>
-        <RaceLinkFields kind={kind} value={link} onChange={setLink} />
-        <LookupPreview r={ref} />
-        {dup && (
-          <p className="callout warn">
-            A market for this race already exists: <Link to={`/m/${dup.id}`}>{dup.title}</Link>. Check it before proposing another.
-          </p>
-        )}
-
-        <div className="field" style={{ marginTop: 12 }}>
-          <label htmlFor="title">Title</label>
-          <input id="title" value={title} onChange={(e) => { setTitle(e.target.value); setTitleEdited(true) }} required />
-        </div>
-
-        <fieldset style={{ border: 0, padding: 0, margin: '0 0 12px' }}>
-          <legend style={{ fontWeight: 650, fontSize: '.9rem', marginBottom: 4 }}>Candidates on the ballot</legend>
-          {rows.map((r, i) => (
-            <div className="row" key={i} style={{ marginBottom: 8 }}>
-              <input aria-label={`Candidate ${i + 1} name`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="Full name" style={{ flex: '1 1 12rem' }} />
-              <select aria-label={`Candidate ${i + 1} party`} value={r.party} onChange={(e) => set(i, { party: e.target.value })} style={{ width: '9rem' }}>
-                <option value="D">Democratic</option><option value="R">Republican</option><option value="I">Independent</option>
-                <option value="L">Libertarian</option><option value="G">Green</option><option value="O">Other party</option>
-              </select>
-              {rows.length > 2 && <button type="button" className="btn ghost small" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</button>}
+      ) : (
+        <div>
+          <div className="panel">
+            <div className="mrow-top">
+              <strong>{raceLabel(race)}</strong>
+              <button type="button" className="btn ghost small" onClick={() => { setRace(null); setFound({ loading: false, res: null }) }}>Change</button>
             </div>
-          ))}
-          {rows.length < 8 && <button type="button" className="btn ghost small" onClick={() => setRows([...rows, { name: '', party: 'O' }])}>Add candidate</button>}
-          <p className="hint">List everyone who could plausibly win. Anyone not listed can&rsquo;t be picked as the winner.</p>
-          <label style={{ fontWeight: 500, marginTop: 8 }}>
-            <input type="checkbox" checked={hasOther} onChange={(e) => setHasOther(e.target.checked)} /> Include an &ldquo;Other candidates&rdquo; remainder
-          </label>
-        </fieldset>
+            <dl className="kv" style={{ marginTop: 8 }}>
+              <dt>Market</dt><dd>{raceTitle(race)}</dd>
+              <dt>Settlement</dt><dd>{basisSentence(race.state)}</dd>
+              <dt>Candidates</dt>
+              <dd>
+                {found.loading ? 'Loading from the polling average…'
+                  : snap ? snap.data.candidates.map((c) => c.name).join(' · ')
+                  : 'Filled in automatically once polling publishes them'}
+              </dd>
+              <dt>Polling</dt>
+              <dd>
+                {found.loading ? 'Checking…'
+                  : snap ? snap.data.candidates.map((c) => `${c.pct.toFixed(1)}%`).join(' – ')
+                  : 'No average published yet'}
+                {' · '}<a href={pollingPageUrl(toPollingRef(race))} target="_blank" rel="noreferrer">PollingSource</a>
+              </dd>
+            </dl>
+          </div>
 
-        <div className="field">
-          <label htmlFor="basis">Outcome basis</label>
-          <select id="basis" value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>
-            <option value="single_round">Single election round</option>
-            <option value="runoff_final">Runoff: winner and share in the decisive runoff</option>
-            <option value="rcv_final">Ranked-choice: winner and share in the final round</option>
-          </select>
-          <p className="hint">Runoffs and ranked-choice races settle on the decisive final round only.</p>
+          {dup && (
+            <p className="callout warn">
+              A market for this race already exists: <Link to={`/m/${dup.id}`}>{dup.title}</Link>.
+            </p>
+          )}
+          <Err>{error}</Err>
+          <button className="btn" disabled={busy || found.loading || !!dup} onClick={submit}>Propose this race</button>
         </div>
-        <div className="field">
-          <label htmlFor="note">Anything the admin should know (optional)</label>
-          <textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Where results will be certified, special rules, links…" />
-        </div>
-        <Err>{error}</Err>
-        <button className="btn" disabled={busy}>Send proposal</button>
-      </form>
+      )}
     </main>
   )
 }

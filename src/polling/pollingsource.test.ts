@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { RaceMismatch, buildRaceUrl, fetchRace, normalizeRace } from './pollingsource'
+import { PLACEHOLDER_D, PLACEHOLDER_R, RaceMismatch, buildRaceUrl, fetchRace, normalizeRace } from './pollingsource'
 
 // Synthetic response in the documented shape (invented numbers and names).
 const sample = {
@@ -45,5 +45,30 @@ describe('PollingSource adapter', () => {
     expect(seen).toContain('/api/v1/race?')
     const bad = (async () => new Response('x', { status: 503 })) as unknown as typeof fetch
     await expect(fetchRace(ref, bad)).rejects.toThrow(/503/)
+  })
+})
+
+describe('candidate names and at-large seats', () => {
+  test('uses the most common Democratic/Republican pair across polls', () => {
+    const polls = [
+      { dem_candidate: 'Alex Example', rep_candidate: 'Sam Sample' },
+      { dem_candidate: 'Alex Example', rep_candidate: 'Sam Sample' },
+      { dem_candidate: 'Someone Else', rep_candidate: '' },
+    ]
+    const s = normalizeRace({ ...sample, recent_polls: { polls } }, ref)!
+    expect(s.data.candidates.map((c) => c.name)).toEqual(['Alex Example', 'Sam Sample'])
+  })
+
+  test('no names published -> clearly marked placeholders', () => {
+    const s = normalizeRace({ ...sample, recent_polls: { polls: [] } }, ref)!
+    expect(s.data.candidates.map((c) => c.name)).toEqual([PLACEHOLDER_D, PLACEHOLDER_R])
+    expect(PLACEHOLDER_D).toMatch(/to be confirmed/)
+  })
+
+  test('at-large seats are numbered 0 by the vendor', () => {
+    const al = { race_type: 'house', state: 'AK', district: 'AL', special: false } as const
+    expect(buildRaceUrl(al)).toContain('district=0')
+    const resp = { race: { ...sample.race, race_type: 'house', state: 'AK', district: 0 } }
+    expect(normalizeRace(resp, al)?.source_url).toBeTruthy()
   })
 })

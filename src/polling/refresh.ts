@@ -13,8 +13,12 @@ export type SnapshotRow = {
   data: Snapshot['data']
 }
 
+export type Cand = { id: string; name: string; party: string }
+
 export type RefreshDeps = {
-  getMarket(id: string): Promise<{ kind: string; polling_ref: PollingRef | null } | null>
+  getMarket(id: string): Promise<{ kind: string; status: string; candidates: Cand[]; polling_ref: PollingRef | null } | null>
+  /** Replace the candidate list of a still-proposed market (never an open one). */
+  setCandidates(id: string, candidates: Cand[]): Promise<void>
   lastProviderFetch(id: string): Promise<number | null>
   fetchRace(ref: PollingRef): Promise<Snapshot | null>
   insert(row: SnapshotRow): Promise<void>
@@ -49,5 +53,31 @@ export async function refreshSnapshot(d: RefreshDeps, marketId: string): Promise
     market_id: marketId, source_kind: 'provider', source_name: snap.source_name, source_url: snap.source_url,
     as_of: snap.as_of || new Date(now).toISOString().slice(0, 10), data: snap.data,
   })
+  // A proposed race starts with "to be confirmed" nominees; replace them with the names in the polls.
+  const real = snap.data.candidates.filter((c) => c.name && !c.name.includes('(to be confirmed)'))
+  const placeholder = m.candidates.some((c) => c.name.includes('(to be confirmed)'))
+  if (m.status === 'proposed' && placeholder && real.length === snap.data.candidates.length && real.length >= 2) {
+    await d.setCandidates(marketId, real.map((c, i) => ({ id: `c${i + 1}`, name: c.name, party: c.party ?? 'O' })))
+  }
   return 'refreshed'
+}
+
+export type RefreshAllDeps = RefreshDeps & { listRaceMarkets(): Promise<string[]> }
+
+/** Daily job: refresh every proposed/open race. Failures on one race never stop the others. */
+export async function refreshAll(d: RefreshAllDeps, concurrency = 4) {
+  const ids = await d.listRaceMarkets()
+  const out: Record<string, number> = { refreshed: 0, fresh: 0, 'no-average': 0, 'no-race-link': 0, failed: 0 }
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, async () => {
+    while (i < ids.length) {
+      const id = ids[i++]
+      try {
+        out[await refreshSnapshot(d, id)]++
+      } catch {
+        out.failed++
+      }
+    }
+  }))
+  return { total: ids.length, ...out }
 }
