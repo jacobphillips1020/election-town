@@ -89,8 +89,9 @@ export function AuthPage() {
             </>
           ) : (
             <div className="field">
-              <label htmlFor="login">Mobile number</label>
+              <label htmlFor="login">Mobile number (or email)</label>
               <input id="login" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" placeholder="(312) 555-0123" />
+              <p className="hint">Signed up with an email address? Use that here.</p>
             </div>
           )}
           <div className="field">
