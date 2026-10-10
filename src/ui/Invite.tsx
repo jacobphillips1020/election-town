@@ -1,24 +1,18 @@
-// "Want to up the stakes? Invite your friends." Share the main ballot with ready-made copy (live pot, deadline).
+// "Want to up the stakes? Invite your friends." Share the main ballot with one short line plus the link.
 // The link itself also previews well (index.html: og:title / og:description / og:image = public/og.jpg).
 import { useState } from 'react'
-import { formatET, usd } from '../domain/format'
+import { usd } from '../domain/format'
 import type { Pool } from '../domain/pool'
 
 const SITE = 'https://election-town.vercel.app'
 
-export function inviteText(pool: Pool, submitted: boolean): string {
-  const stakes = pool.ballots > 0 ? ` ${pool.ballots} ${pool.ballots === 1 ? 'ballot' : 'ballots'} and ${usd(pool.pot_cents)} in the pot so far.` : ''
-  const lead = submitted
-    ? 'I just filled out my Election Town ballot. Think you can out-call me?'
-    : 'Think you can call the midterms?'
-  return `${lead} Pick the 10 Senate races that decide control, plus the House and Senate seat counts. `
-    + `${usd(pool.ballot_cents)} all in, best calls take the pots.${stakes} Picks close ${formatET(pool.deadline)}.`
-}
+/** What goes alongside the link. The link itself previews with the banner card (index.html / public/og.jpg). */
+export const INVITE_TEXT = 'Make your prediction for this year’s midterms and win money!'
 
-export function Invite({ pool, submitted, compact = false }: { pool: Pool; submitted: boolean; compact?: boolean }) {
+export function Invite({ pool, compact = false }: { pool: Pool; submitted?: boolean; compact?: boolean }) {
   const [msg, setMsg] = useState('')
   const url = typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? `${window.location.origin}/` : `${SITE}/`
-  const text = inviteText(pool, submitted)
+  const text = INVITE_TEXT
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 4000) }
 
   async function share() {
