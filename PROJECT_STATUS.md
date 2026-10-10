@@ -42,8 +42,14 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
 
 ## Data sources
 
-- **PollingSource** (free, no key): race averages + candidate names + expert ratings, daily cron + on demand (≤12 h;
-  race details ≤3 days). Coverage 2026-10-10: 27/35 Senate, 81 House districts.
+- **PollingSource** (free, no key): race averages + candidate names, daily cron + on demand (≤12 h; race details
+  ≤3 days). Coverage 2026-10-10: 27/35 Senate, 81 House districts. Its `expert_ratings` field is **not used**: it was
+  stale and wrong (Alaska's Cook rating was "Solid R"; Cook's page said Toss Up; 6 of 13 spot-checked races differed).
+- **Expert ratings** (Cook, Inside Elections, Sabato): the "Predictions" table on Wikipedia's *2026 United States
+  Senate elections* page via the MediaWiki API (CC BY-SA; each forecaster's own date), stored in `expert_ratings`
+  daily (`src/polling/ratings.ts`; refuses a table that doesn't parse to ≥30 races). Verified against Cook's own page
+  (Oct 6). **Do not scrape the forecasters' sites**: Cook's terms prohibit automated access/copying and offer paid
+  licensing (cookpolitical.com/api); their site also blocks bots. Links to their pages stay in the UI.
 - **Polymarket** public feed (no key): "Republican Senate/House seats after the 2026 midterms" price ranges → median
   seats; "Which party wins the Senate/House" → control odds. Stored in `seat_forecasts` (≤6 h, daily cron).
   Model forecasts (DDHQ, Silver Bulletin, Poliwave) block automated access or are paywalled.
@@ -51,15 +57,15 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
 
 ## Code map
 
-- `supabase/migrations/` (9 files; the 9th, `20261011000001_main_pool.sql`, is the v2 pool). Scoring and settlement
-  live only in SQL.
+- `supabase/migrations/` (10 files; `20261011000001_main_pool.sql` is the v2 pool, `…000002_expert_ratings.sql` moves
+  ratings to their own table). Scoring and settlement live only in SQL.
 - `src/ui/Home.tsx` (dashboard), `Ballot.tsx`, `Card.tsx` + `cardSvg.ts`, `SideBets.tsx`, `MarketDetail.tsx`,
   `Pick.tsx` (race + seat pickers), `TileMap.tsx`, `Balance.tsx`, `Admin.tsx`.
 - `src/domain/pool.ts` (ballot draft, colors, links), `senate.ts` (holders, seat math), `tiles.ts`, `pdf.ts`.
-- `src/polling/forecast.ts` (Polymarket), `board.ts` (+ expert ratings); `api/polling.ts`, `api/polling-cron.ts`.
+- `src/polling/forecast.ts` (Polymarket), `ratings.ts` (Wikipedia), `board.ts`; `api/polling.ts`, `api/polling-cron.ts`.
 - Demo mode (no env vars): real migrations in PGlite + `src/demo/polling.sql` (public data snapshot) + `seed.sql`
   (fictional people). Dev only: `?demo=closed` shows the pool after close; `?demo=open` goes back.
-- Tests: `npm test` (116).
+- Tests: `npm test` (124; `tests/fixtures/` holds the real ratings table as fetched 2026-10-10).
 
 ## Keys and settings
 

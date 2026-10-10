@@ -3,7 +3,7 @@
 //   { action: "lookup",  race: {race_type,state,district,special} }  -> current average (preview on the propose form)
 //   { action: "refresh", market_id }                                 -> stores a snapshot, at most every 6 hours per race
 //   { action: "board" }                                             -> refreshes the race board (at most every 12 hours)
-//                                                                       and the seat forecasts (at most every 6 hours)
+//                                                                       plus seat forecasts (6 h) and expert ratings (12 h)
 // A refresh writes one snapshot row that every member reads, so the vendor sees a handful of requests a day.
 // Storing needs SUPABASE_SERVICE_ROLE_KEY (server env only, never a VITE_ variable).
 import { createClient } from '@supabase/supabase-js'
@@ -12,7 +12,8 @@ import { RaceMismatch, fetchRace } from '../src/polling/pollingsource.js'
 import { REFRESH_MS, refreshSnapshot, type Cand } from '../src/polling/refresh.js'
 import { refreshBoard } from '../src/polling/board.js'
 import { refreshForecasts } from '../src/polling/forecast.js'
-import { boardDeps, forecastDeps } from './_board.js'
+import { refreshRatings } from '../src/polling/ratings.js'
+import { boardDeps, forecastDeps, ratingsDeps } from './_board.js'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -50,11 +51,12 @@ export default {
         const service = process.env.SUPABASE_SERVICE_ROLE_KEY
         if (!service) return json({ status: 'not-configured' })
         const db = createClient(url, service, { auth: { persistSession: false } })
-        const [board, forecasts] = await Promise.all([
+        const [board, forecasts, ratings] = await Promise.all([
           refreshBoard(boardDeps(db)),
           refreshForecasts(forecastDeps(db)).catch(() => ({ status: 'failed' as const })),
+          refreshRatings(ratingsDeps(db)).catch(() => ({ status: 'failed' as const })),
         ])
-        return json({ ...board, forecasts: forecasts.status })
+        return json({ ...board, forecasts: forecasts.status, ratings: ratings.status })
       }
 
       if (body.action === 'refresh' && body.market_id) {

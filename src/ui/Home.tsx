@@ -120,6 +120,7 @@ function Dashboard({ pool }: { pool: Pool }) {
       </p>
       <p className="board-source">
         Polling: PollingSource averages{pool.polling_fetched_at && `, updated ${new Date(pool.polling_fetched_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}.
+        Race ratings: Cook, Inside Elections and Sabato, as compiled on <a href="https://en.wikipedia.org/wiki/2026_United_States_Senate_elections#Predictions" target="_blank" rel="noreferrer">Wikipedia</a> (hover a rating for its date).
         Seat forecasts: Polymarket prices (median seats), refreshed daily. “Now” is today’s Senate; the House shows the 2024 result.
       </p>
     </main>
@@ -256,7 +257,7 @@ function RaceDetail({ row, m, pool, mine, onClose }: { row: SenateRow; m: PoolMa
       {p?.dem_avg != null && p.rep_avg != null ? (
         <MatchupLine row={row} m={m} />
       ) : <p className="small">No polling average yet.</p>}
-      <div className="bi-meta">{p?.rating && <RatingChip rating={p.rating} prefix="Polls" />}<Experts experts={p?.experts} /></div>
+      <div className="bi-meta">{p?.rating && <RatingChip rating={p.rating} prefix="Polls" />}<Experts experts={row.experts ?? p?.experts} /></div>
       {m && (
         <>
           <p className="small" style={{ margin: '8px 0 4px' }}>

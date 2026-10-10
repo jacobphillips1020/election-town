@@ -254,7 +254,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
         )}
       </ol>
       <p className="board-source">
-        Polling: PollingSource averages; expert ratings as published there. Markets: Polymarket seat prices (median).
+        Polling: PollingSource averages. Race ratings: Cook, Inside Elections and Sabato, as compiled on Wikipedia. Markets: Polymarket seat prices (median).
         Two-way share = votes for the two listed candidates only.
       </p>
 

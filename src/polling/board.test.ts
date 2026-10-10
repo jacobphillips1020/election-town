@@ -55,7 +55,7 @@ describe('refreshBoard', () => {
   test('re-uses recent names instead of asking the vendor again', async () => {
     const recent = new Date(NOW - 3600e3).toISOString()
     const { d, nameCalls, upserts } = deps({
-      existingNames: async () => new Map([['senate:AK::0', { dem_name: 'Kept D', rep_name: 'Kept R', names_fetched_at: recent, experts: [] }]]),
+      existingNames: async () => new Map([['senate:AK::0', { dem_name: 'Kept D', rep_name: 'Kept R', names_fetched_at: recent }]]),
     })
     await refreshBoard(d)
     expect(nameCalls).toEqual(['OH'])
@@ -71,33 +71,4 @@ describe('refreshBoard', () => {
     expect(await refreshBoard(d)).toMatchObject({ races: 2, names: 0, failed: 2 })
     expect(upserts[0][0]).toMatchObject({ dem_avg: 48, dem_name: 'Old D' })
   })
-})
-
-describe('expert ratings', () => {
-  test('are parsed from the race detail and kept when names are fresh', async () => {
-    const { parseExperts } = await import('./board')
-    expect(parseExperts({ expert_ratings: [{ source: 'Cook Political Report', rating: 'Toss Up' }, { source: '', rating: 'x' }, { rating: 'y' }] }))
-      .toEqual([{ source: 'Cook Political Report', rating: 'Toss Up' }])
-    expect(parseExperts({})).toEqual([])
-    const recent = new Date(NOW - 3600e3).toISOString()
-    const experts = [{ source: 'Inside Elections', rating: 'Tilt Republican' }]
-    const { d, upserts } = deps({
-      existingNames: async () => new Map([['senate:AK::0', { dem_name: 'D', rep_name: 'R', names_fetched_at: recent, experts }]]),
-      fetchNames: async (ref) => ({ dem: `${ref.state} Dem`, rep: `${ref.state} Rep`, experts: [{ source: 'Cook Political Report', rating: 'Lean R' }] }),
-    })
-    await refreshBoard(d)
-    expect(upserts[0].map((r) => r.experts)).toEqual([experts, [{ source: 'Cook Political Report', rating: 'Lean R' }]])
-  })
-})
-
-test('a race whose detail was never read for expert ratings is read once, even with fresh names', async () => {
-  const recent = new Date(NOW - 3600e3).toISOString()
-  const { d, nameCalls } = deps({
-    existingNames: async () => new Map([
-      ['senate:AK::0', { dem_name: 'D', rep_name: 'R', names_fetched_at: recent, experts: null }],
-      ['senate:OH::1', { dem_name: 'D', rep_name: 'R', names_fetched_at: recent, experts: [] }],
-    ]),
-  })
-  await refreshBoard(d)
-  expect(nameCalls).toEqual(['AK'])
 })

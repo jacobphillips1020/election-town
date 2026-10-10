@@ -2,6 +2,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchNames, type BoardDeps } from '../src/polling/board.js'
 import { fetchPolymarketEvent, type ForecastDeps } from '../src/polling/forecast.js'
+import { fetchPredictionsTable, type RatingsDeps } from '../src/polling/ratings.js'
 
 export function boardDeps(db: SupabaseClient): BoardDeps {
   return {
@@ -15,7 +16,7 @@ export function boardDeps(db: SupabaseClient): BoardDeps {
       return r.json()
     },
     existingNames: async () => {
-      const { data } = await db.from('race_polling').select('race_key, dem_name, rep_name, names_fetched_at, experts')
+      const { data } = await db.from('race_polling').select('race_key, dem_name, rep_name, names_fetched_at')
       return new Map((data ?? []).map((x) => [x.race_key as string, x]))
     },
     fetchNames,
@@ -35,6 +36,20 @@ export function forecastDeps(db: SupabaseClient): ForecastDeps {
     fetchEvent: (slug) => fetchPolymarketEvent(slug),
     upsert: async (rows) => {
       const { error } = await db.from('seat_forecasts').upsert(rows, { onConflict: 'chamber' })
+      if (error) throw new Error('store failed')
+    },
+  }
+}
+
+export function ratingsDeps(db: SupabaseClient): RatingsDeps {
+  return {
+    lastFetch: async () => {
+      const { data } = await db.from('expert_ratings').select('fetched_at').order('fetched_at', { ascending: true }).limit(1)
+      return data?.[0] ? new Date(data[0].fetched_at).getTime() : null
+    },
+    fetchTable: () => fetchPredictionsTable(),
+    upsert: async (rows) => {
+      const { error } = await db.from('expert_ratings').upsert(rows, { onConflict: 'race_key' })
       if (error) throw new Error('store failed')
     },
   }

@@ -83,11 +83,12 @@ describe('the slate', () => {
     // Re-run the slate migration on a database where the Congress market had an entry.
     const fresh = new PGlite()
     await fresh.exec(AUTH_STUB)
-    for (const m of MIGRATIONS.slice(0, -1)) await fresh.exec(m)
+    const poolAt = MIGRATIONS.findIndex((m) => /Election Town v2: the main pool/.test(m))
+    for (const m of MIGRATIONS.slice(0, poolAt)) await fresh.exec(m)
     await fresh.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'a@example.test', '{"display_name":"A"}')`, [U.maya])
     const cong = (await fresh.query<{ id: string }>(`select id from public.markets where kind = 'congress'`)).rows[0].id
     await rpc(fresh, U.maya, 'submit_entry', { p_market: cong, p_seats: { house: { d: 220, r: 215, o: 0 }, senate: { d: 49, r: 50, o: 1 } } })
-    await fresh.exec(MIGRATIONS[MIGRATIONS.length - 1])
+    await fresh.exec(MIGRATIONS[poolAt])
     const led = await rpc<{ totals: Record<string, number> }>(fresh, U.maya, 'my_ledger')
     expect(led.totals).toMatchObject({ committed_cents: 1000, refund_cents: 1000, remaining_cents: 0, unresolved_cents: 0 })
   })
@@ -297,4 +298,26 @@ const boardNames = (key: string, dem: string, rep: string) =>
 test('visitors cannot read the forecasts table directly', async () => {
   await expect(select(db, null, 'select * from public.seat_forecasts')).rejects.toThrow(/permission denied/i)
   await expect(select(db, U.maya, 'select * from public.seat_forecasts')).rejects.toThrow(/permission denied/i)
+})
+
+describe('expert ratings', () => {
+  test('come only from the server-written table: shown on the ballot races and on every Senate race, never writable by clients', async () => {
+    await db.exec(`insert into public.expert_ratings (race_key, ratings) values
+      ('senate:AK::0', '[{"source":"Cook Political Report","rating":"Toss Up","as_of":"2026-10-06"}]'),
+      ('senate:VA::0', '[{"source":"Cook Political Report","rating":"Solid D","as_of":"2026-10-06"}]')`)
+    await db.exec(`insert into public.race_polling (race_key, race_type, state, district, is_special, dem_name, rep_name, dem_avg, rep_avg, poll_count)
+                   values ('senate:AK::0', 'senate', 'AK', null, false, 'Mary Peltola', 'Dan Sullivan', 48, 44.5, 2)`)
+    const p = await pool(null)
+    const ak = p.markets.find((m) => m.title === 'Alaska Senate') as unknown as { polling: { experts: { rating: string }[] } }
+    expect(ak.polling.experts[0].rating).toBe('Toss Up')
+    // a race with no polling still carries its ratings on the map
+    const va = p.senate.find((s) => s.state === 'VA') as unknown as { polling: unknown; experts: { rating: string }[] }
+    expect([va.polling, va.experts[0].rating]).toEqual([null, 'Solid D'])
+    // no races without ratings invent any
+    expect((p.senate.find((s) => s.state === 'WY') as unknown as { experts: unknown }).experts).toBeNull()
+    await expect(select(db, U.maya, 'select * from public.expert_ratings')).rejects.toThrow(/permission denied/i)
+    await expect(select(db, U.jake, `insert into public.expert_ratings (race_key, ratings) values ('x', '[]')`)).rejects.toThrow(/permission denied/i)
+    // the old feed's column is gone
+    expect((await db.query(`select 1 from information_schema.columns where table_name = 'race_polling' and column_name = 'experts'`)).rows).toHaveLength(0)
+  })
 })

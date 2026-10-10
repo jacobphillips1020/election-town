@@ -7,16 +7,21 @@ import type { CSSProperties } from 'react'
 import { expertShort, inkFor, leanColor, seatLean, shareLean, sideOf, twoWay, winsBy, type Expert, type PickDraft } from '../domain/pool'
 import type { Market } from '../domain/types'
 
-export function RatingChip({ rating, prefix }: { rating: string; prefix?: string }) {
+export function RatingChip({ rating, prefix, title }: { rating: string; prefix?: string; title?: string }) {
   const t = ratingTone(rating)
-  return <span className={`rate ${t.side ? `rate-${t.side.toLowerCase()}${t.level}` : 'rate-toss'}`}>{prefix && <b>{prefix} </b>}{rating}</span>
+  return <span className={`rate ${t.side ? `rate-${t.side.toLowerCase()}${t.level}` : 'rate-toss'}`} title={title}>{prefix && <b>{prefix} </b>}{rating}</span>
 }
+
+const fmtDate = (iso: string) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 export function Experts({ experts }: { experts: Expert[] | null | undefined }) {
   if (!experts?.length) return null
   return (
     <span className="experts">
-      {experts.map((e) => <RatingChip key={e.source} rating={e.rating} prefix={expertShort(e.source)} />)}
+      {experts.map((e) => (
+        <RatingChip key={e.source} rating={e.rating} prefix={expertShort(e.source)}
+          title={`${e.source}: ${e.rating}${e.as_of ? `, as of ${fmtDate(e.as_of)}` : ''}`} />
+      ))}
     </span>
   )
 }

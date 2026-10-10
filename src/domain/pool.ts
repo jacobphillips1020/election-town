@@ -5,7 +5,7 @@ import { stateName } from './states'
 import type { Candidate, Market } from './types'
 import type { Side } from './senate'
 
-export type Expert = { source: string; rating: string }
+export type Expert = { source: string; rating: string; as_of?: string | null }
 export type RacePolling = BoardPolling & { experts: Expert[] | null }
 export type Tally = {
   /** ballots that made this pick (blank picks excluded) */
@@ -27,7 +27,7 @@ export type Forecast = {
   buckets: { label: string; lo: number; hi: number; p: number }[]
   fetched_at: string
 }
-export type SenateRow = { state: string; special: boolean; polling: RacePolling | null; market: { id: string; featured: boolean } | null }
+export type SenateRow = { state: string; special: boolean; polling: RacePolling | null; experts: Expert[] | null; market: { id: string; featured: boolean } | null }
 export type BallotEntry = { winner_id: string | null; shares: Record<string, number> | null; seats: { r: number } | null }
 export type GridBallot = { you: boolean; picks: Record<string, { w?: string; s?: number; r?: number }> }
 export type Pool = {
