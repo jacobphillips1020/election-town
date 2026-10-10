@@ -8,7 +8,9 @@ import type { Side } from './senate'
 export type Expert = { source: string; rating: string }
 export type RacePolling = BoardPolling & { experts: Expert[] | null }
 export type Tally = {
+  /** ballots that made this pick (blank picks excluded) */
   n: number
+  blank: number
   picks: Record<string, number>
   mean_shares: Record<string, number>
   r_mean: number | null
@@ -85,15 +87,22 @@ export function checkPick(m: Pick<Market, 'kind' | 'candidates'>, d: PickDraft |
   return { ok: true, value: { winner_id: w, shares: { [w]: t, [other.id]: 1000 - t } } }
 }
 
+/** Nothing entered for this pick: it goes in blank (the stake still counts; it can't win). */
+export function isBlank(m: Pick<Market, 'kind'>, d: PickDraft | undefined): boolean {
+  return isSeat(m) ? !(d?.r ?? '').trim() : !d?.winner
+}
+
 export function buildBallot(markets: PoolMarket[], d: Draft) {
   const picks: Record<string, Record<string, unknown>> = {}
   const problems: { m: PoolMarket; reason: string }[] = []
+  const skipped: PoolMarket[] = []
   for (const m of markets.filter((x) => x.phase === 'open')) {
+    if (isBlank(m, d[m.id])) { picks[m.id] = {}; skipped.push(m); continue }
     const c = checkPick(m, d[m.id])
     if (c.ok) picks[m.id] = c.value
     else problems.push({ m, reason: c.reason })
   }
-  return { picks, problems }
+  return { picks, problems, skipped }
 }
 
 /** Two-way polling share for each listed candidate (first listed = the Democratic/independent slot). */

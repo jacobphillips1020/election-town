@@ -5,21 +5,31 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
 import { formatET, usd } from '../domain/format'
-import { RATINGS_LINKS, buildBallot, checkPick, draftFromBallot, raceLinks, sideOf, type Draft, type Pool, type PoolMarket } from '../domain/pool'
+import { RATINGS_LINKS, buildBallot, checkPick, draftFromBallot, isBlank, raceLinks, sideOf, type Draft, type Pool, type PoolMarket } from '../domain/pool'
 import { HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, senateKey, senateR, type Side } from '../domain/senate'
 import { Err, Loading } from './common'
 import { Experts, Links, RacePick, RatingChip, SeatPick } from './Pick'
 import { Balance } from './Balance'
 
-const DRAFT_KEY = 'et-ballot-draft-v2'
+// Unsubmitted picks are kept per person in this browser ("anon" before sign-up, carried over once signed up).
+const KEY = (uid: string | null) => `et-ballot-draft-v3:${uid ?? 'anon'}`
 type Saved = { draft: Draft; at: number }
-const loadLocal = (): Saved | null => {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null') } catch { return null }
+const read = (k: string): Saved | null => {
+  try { return JSON.parse(localStorage.getItem(k) ?? 'null') } catch { return null }
 }
-const saveLocal = (draft: Draft | null) => {
-  try { if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify({ draft, at: Date.now() })); else localStorage.removeItem(DRAFT_KEY) } catch { /* private mode */ }
+const saveLocal = (uid: string | null, draft: Draft | null) => {
+  try { if (draft) localStorage.setItem(KEY(uid), JSON.stringify({ draft, at: Date.now() })); else localStorage.removeItem(KEY(uid)) } catch { /* private mode */ }
 }
-export const currentDraft = loadLocal
+
+/** This person's unsubmitted draft, if it's newer than their submitted ballot. */
+export function currentDraft(uid: string | null, submittedAt: string | null): Saved | null {
+  const own = read(KEY(uid))
+  const carried = uid && !own && !submittedAt ? read(KEY(null)) : null // filled out before signing up
+  const d = own ?? carried
+  if (!d) return null
+  if (submittedAt && d.at <= Date.parse(submittedAt)) return null
+  return d
+}
 
 /** Side picked in each featured Senate race, keyed like the Senate math ("OH*" for Ohio's special). */
 export function pickedSides(markets: PoolMarket[], d: Draft): Record<string, Side> {
@@ -40,12 +50,12 @@ export function BallotPage() {
 }
 
 function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
-  const { backend, me } = useApp()
+  const { backend, me, uid } = useApp()
   const account = useAccount()
   const admin = useAdminName()
   const nav = useNavigate()
   const server = useMemo(() => draftFromBallot(pool.my_ballot), [pool.my_ballot])
-  const [draft, setDraft] = useState<Draft>(() => loadLocal()?.draft ?? server)
+  const [draft, setDraft] = useState<Draft>(() => currentDraft(uid, pool.my_updated_at)?.draft ?? server)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
@@ -66,11 +76,11 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   }, [draft, seatSen, implied])
 
   const dirty = JSON.stringify(normalize(effective)) !== JSON.stringify(normalize(server))
-  const { picks, problems } = buildBallot(pool.markets, effective)
+  const { picks, problems, skipped } = buildBallot(pool.markets, effective)
   const count = pool.markets.filter((m) => m.phase === 'open').length
-  const made = count - problems.length
+  const made = count - problems.length - skipped.length
 
-  useEffect(() => { if (open) saveLocal(dirty ? draft : null) }, [draft, dirty, open])
+  useEffect(() => { if (open) saveLocal(uid, dirty ? draft : null) }, [draft, dirty, open, uid])
 
   const set = (id: string, v: Draft[string]) => { setDone(false); setDraft((d) => ({ ...d, [id]: v })) }
 
@@ -83,12 +93,15 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
       firstBad.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
-    if (!account.signedIn) { saveLocal(draft); nav(account.signupPath('/ballot')); return }
+    if (made === 0) { setErr('Make at least one pick.'); return }
+    if (skipped.length && !confirm(`${skipped.length === 1 ? 'One pick is' : `${skipped.length} picks are`} still blank: ${skipped.map(label).join(', ')}.\n\nThat's fine: submit now and fill ${skipped.length === 1 ? 'it' : 'them'} in any time before ${formatET(pool.deadline)}. Anything still blank at the close stays in the pot but can't win.\n\nSubmit what you have?`)) return
+    if (!account.signedIn) { saveLocal(null, draft); nav(account.signupPath('/ballot')); return }
     if (!account.isMember) { setErr('The group is invite-only right now. Ask the organizer for the invitation link.'); return }
     setBusy(true)
     try {
       await backend.rpc('submit_ballot', { p_picks: picks })
-      saveLocal(null)
+      saveLocal(uid, null)
+      saveLocal(null, null)
       setDone(true)
       reload()
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -104,7 +117,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
     setBusy(true)
     try {
       await backend.rpc('withdraw_ballot')
-      saveLocal(null)
+      saveLocal(uid, null)
       setDraft({})
       reload()
     } catch (e) {
@@ -123,14 +136,18 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
       <p className="small"><Link to="/">← The pool</Link></p>
       <h1>{submitted ? 'Your ballot' : 'Fill out your ballot'}</h1>
       <p className="lede">
-        {count || 12} picks, {usd(pool.ballot_cents)}.{' '}
-        {open ? <>Your picks save in this browser as you go. Submit once you&rsquo;re happy; you can change and resubmit until <strong>{formatET(pool.deadline)}</strong>.</>
+        {count || 12} picks, {usd(pool.ballot_cents)} all in.{' '}
+        {open ? <><b>Submit what you have now and come back to finish or change it any time</b> until {formatET(pool.deadline)}.
+          {' '}Your picks also save in this browser as you go. A race still blank at the close stays in the pot (your {usd(pool.ballot_cents)}
+          {' '}covers it), it just can&rsquo;t win.</>
           : <>The pool closed {formatET(pool.deadline)}.</>}
       </p>
 
       {done && (
         <div className="callout ok-callout" role="status">
           <strong>Ballot in. </strong>
+          {skipped.length > 0 ? <>{skipped.length} still blank; come back and fill {skipped.length === 1 ? 'it' : 'them'} in any time. </> : null}
+          You can change any pick until {formatET(pool.deadline)}; just come back to My Ballot.{' '}
           {pool.pay_note ? <>Next: {pool.pay_note}</> : <>Pay {admin} {usd(pool.ballot_cents)} before the pool closes.</>}
           <div className="row" style={{ marginTop: 8 }}>
             <Link className="btn" to="/card">Share my picks</Link>
@@ -141,7 +158,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
       {!done && submitted && !dirty && open && (
         <p className="callout" role="status">
           Submitted{pool.my_updated_at && ` ${new Date(pool.my_updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}.
-          {' '}Change anything below and resubmit. <Link to="/card">Share my picks</Link>
+          {' '}{skipped.length > 0 && <b>{skipped.length} still blank. </b>}Change or fill in anything below and resubmit, as often as you like, until {formatET(pool.deadline)}. <Link to="/card">Share my picks</Link>
         </p>
       )}
       {submitted && dirty && open && <p className="callout warn" role="status">You have unsubmitted changes. Resubmit to save them.</p>}
@@ -152,9 +169,14 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
 
       <h2 className="ballot-h">The Senate races that decide control</h2>
       <p className="hint" style={{ marginTop: -4 }}>
-        Pick each winner and their share of the two-way vote. {races[0] ? usd(races[0].buy_in_cents ?? 0) : '$4'} per race:
+        Pick each winner and their two-way vote share. {races[0] ? usd(races[0].buy_in_cents ?? 0) : '$4'} per race:
         among those who pick the winner, the closest share takes that race&rsquo;s pot.
       </p>
+      <div className="explain">
+        <b>Two-way vote share</b> = the winner&rsquo;s votes ÷ the votes for the two candidates listed. Votes for anyone
+        else don&rsquo;t count. So a race that ends <b>48% to 42%</b> with 10% for others is <b>53.3% to 46.7%</b> two-way.
+        The polling on each race is converted the same way.
+      </div>
       <ol className="ballot">
         {races.map((m, i) => {
           const bad = tried && !checkPick(m, effective[m.id]).ok
@@ -173,7 +195,10 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
               <RacePick m={m} polling={p} value={effective[m.id]} onChange={(v) => set(m.id, v)} disabled={!open} />
               <div className="bi-foot">
                 <Links links={raceLinks(m, p?.page)} />
-                <Link className="small" to={`/m/${m.id}`}>Rules & details</Link>
+                <span className="bi-foot-r">
+                  {open && !isBlank(m, effective[m.id]) && <button type="button" className="linklike small" onClick={() => set(m.id, {})}>Clear pick</button>}
+                  <Link className="small" to={`/m/${m.id}`}>Rules & details</Link>
+                </span>
               </div>
               {bad && <p className="err small">{(checkPick(m, effective[m.id]) as { reason: string }).reason}</p>}
             </li>
@@ -215,6 +240,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
             </p>
             <SeatPick id={seatHouse.id} total={435} min={170} max={260} disabled={!open} value={effective[seatHouse.id]?.r}
               onChange={(r) => set(seatHouse.id, { r, touched: true })} />
+            {open && !isBlank(seatHouse, effective[seatHouse.id]) && <button type="button" className="linklike small" onClick={() => set(seatHouse.id, { r: '', touched: true })}>Clear pick</button>}
             <Balance total={435} line={HOUSE_MAJORITY} lineLabel="218 for a majority" rows={[
               { label: '2024', r: HOUSE_2024_R },
               { label: 'Markets', r: house?.r_median ?? null, note: house?.d_control_pct != null ? `Dems ${Math.round(house.d_control_pct)}% to win` : undefined },
@@ -231,10 +257,11 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
       {open && (
         <div className="submitbar">
           <div className="submitbar-in">
-            <span className="submit-count"><b>{made}</b> of {count} picked{dirty && submitted ? ' · unsaved changes' : ''}</span>
+            <span className="submit-count"><span><b>{made}</b> of {count} picked{skipped.length > 0 && ` · ${skipped.length} blank`}{dirty && submitted ? ' · unsaved changes' : ''}</span>
+              <span className="submit-sub">Editable until {formatET(pool.deadline)}</span></span>
             <Err>{err}</Err>
             <button type="button" className="btn submit" disabled={busy || (submitted && !dirty)} onClick={submit}>
-              {busy ? 'Saving…' : !account.signedIn ? `Sign up to submit · ${usd(pool.ballot_cents)}` : submitted ? (dirty ? 'Resubmit ballot' : 'Submitted ✓') : `Submit ballot · ${usd(pool.ballot_cents)}`}
+              {busy ? 'Saving…' : !account.signedIn ? `Sign up to submit · ${usd(pool.ballot_cents)}` : submitted ? (dirty ? 'Save changes' : 'Submitted ✓') : skipped.length ? `Submit what I have · ${usd(pool.ballot_cents)}` : `Submit ballot · ${usd(pool.ballot_cents)}`}
             </button>
           </div>
         </div>
@@ -247,11 +274,13 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   )
 }
 
+const label = (m: PoolMarket) => (m.kind === 'senate_seats' ? 'Senate seats' : m.kind === 'house_seats' ? 'House seats' : m.title)
+
 /** Compare drafts by meaning, not by how they were typed. */
 function normalize(d: Draft) {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(d)) {
-    if (v.r !== undefined) out[k] = `r${(v.r ?? '').trim()}`
+    if (v.r !== undefined) { if ((v.r ?? '').trim()) out[k] = `r${v.r.trim()}` }
     else if (v.winner) out[k] = `${v.winner}:${parseFloat(v.share ?? '').toFixed(1)}`
   }
   return Object.fromEntries(Object.entries(out).sort())

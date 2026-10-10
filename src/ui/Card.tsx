@@ -64,11 +64,12 @@ export function CardPage() {
 }
 
 function CardView({ pool }: { pool: Pool }) {
-  const { me } = useApp()
+  const { me, uid } = useApp()
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
   const submitted = !!pool.my_ballot && Object.keys(pool.my_ballot).length > 0
-  const picks = useMemo(() => (submitted ? draftFromBallot(pool.my_ballot) : currentDraft()?.draft ?? {}), [pool.my_ballot, submitted])
+  // What's actually submitted; before the first submit, this browser's draft.
+  const picks = useMemo(() => (submitted ? draftFromBallot(pool.my_ballot) : currentDraft(uid, null)?.draft ?? {}), [uid, pool.my_ballot, submitted])
   const sen = pool.markets.find((m) => m.kind === 'senate_seats')
   const house = pool.markets.find((m) => m.kind === 'house_seats')
   const num = (s?: string) => (s && /^\d{1,3}$/.test(s) ? +s : null)

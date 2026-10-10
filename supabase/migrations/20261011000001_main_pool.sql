@@ -4,7 +4,8 @@
 --   * the 10 Senate races that decide control. Pick the winner and their share of the two-candidate vote;
 --     among those who picked the winner, the closest share takes that race's pot (the v1 race scoring);
 --   * Republican seats in the next Senate, and in the next House. The closest guess takes the pot.
--- Each pick is its own pot: $4 per Senate race and $5 per seat count, so a ballot is $50.
+-- Each pick is its own pot: $4 per Senate race and $5 per seat count, so a ballot is $50. A ballot is always the
+-- whole $50: a pick left blank still puts its stake in that pot, but a blank pick can't win it.
 -- Side bets are any other race, opened by a member at $5. The admin can move the pool's closing time,
 -- and change a side bet's stake or closing time.
 -- Seat forecasts from prediction markets are stored next to the polling for the home page.
@@ -61,8 +62,9 @@ $$;
 
 create function app.race_rules(p_state text, p_basis text) returns text
 language sql immutable as $$
-  select 'Pick the winner and their share of the two-candidate vote (votes for the two listed candidates only), '
-      || 'from the certified results published by ' || app.state_name(p_state) || '''s official election authority. '
+  select 'Pick the winner and their two-way vote share: their votes divided by the votes for the two listed candidates '
+      || 'only, from the certified results published by ' || app.state_name(p_state) || '''s official election authority. '
+      || 'Votes for anyone else don''t count, so a 48% to 42% result with 10% for others is 53.3% to 46.7% two-way. '
       || 'Among those who picked the winner, the closest share takes this race''s pot; exact ties split it. '
       || 'If nobody picked the winner, or another candidate wins, everyone gets their stake back.'
       || case p_basis
@@ -152,8 +154,11 @@ begin
   if tg_op = 'UPDATE' and (new.market_id, new.user_id) is distinct from (old.market_id, old.user_id) then
     raise exception 'An entry cannot move to another market or person';
   end if;
-  perform app.validate_prediction(m, new.winner_id, new.shares, new.seats);
-  if m.kind in ('senate_seats', 'house_seats') then new.seats := jsonb_build_object('r', (new.seats ->> 'r')::int); end if;
+  -- A blank main-pool pick: the stake is in the pot, with no prediction (so it can't win).
+  if not (m.featured and new.winner_id is null and new.shares is null and new.seats is null) then
+    perform app.validate_prediction(m, new.winner_id, new.shares, new.seats);
+    if m.kind in ('senate_seats', 'house_seats') then new.seats := jsonb_build_object('r', (new.seats ->> 'r')::int); end if;
+  end if;
   new.commitment_cents := m.buy_in_cents;
   new.updated_at := clock_timestamp();
   return new;
@@ -185,6 +190,7 @@ end $$;
 --  seats:  everyone is eligible; closest Republican seat count takes the pot.
 --  congress (retired): half the sum of the six absolute seat differences.
 --  Ties split the whole pool; leftover cents go to the lowest entry ids (stable order).
+--  A blank main-pool pick is in the pot but never eligible.
 --  Fewer than 2 entries, or nobody eligible: everyone is refunded.
 create or replace function app.compute_outcome(p_market uuid, p_winner text, p_share int, p_seats jsonb)
 returns table (entry_id uuid, user_id uuid, commitment_cents int, eligible boolean,
@@ -196,7 +202,7 @@ begin
   return query
   with s as (
     select e.id as eid, e.user_id as uid, e.commitment_cents as cc,
-      case when app.is_seat_kind(m.kind) then true else e.winner_id = p_winner end as elig,
+      case when app.is_seat_kind(m.kind) then e.seats is not null else coalesce(e.winner_id = p_winner, false) end as elig,
       case when m.kind = 'congress' then
         ( abs((e.seats #>> '{house,d}')::int  - (p_seats #>> '{house,d}')::int)
         + abs((e.seats #>> '{house,r}')::int  - (p_seats #>> '{house,r}')::int)
@@ -309,23 +315,23 @@ end $$;
 
 -- ---------------------------------------------------------------- the ballot
 
--- p_picks: {"<market id>": {"winner_id": "c1", "shares": {"c1": 515, "c2": 485}} | {"seats": {"r": 48}}}
--- Every open main-pool pick is required. All or nothing: one bad pick saves none of them.
+-- p_picks: {"<market id>": {"winner_id": "c1", "shares": {"c1": 515, "c2": 485}} | {"seats": {"r": 48}} | {}}
+-- The ballot is always the whole set: a missing or empty pick is entered blank (its stake still goes in that pot).
+-- At least one real pick is required. All or nothing: one bad pick saves none of them.
 create function public.submit_ballot(p_picks jsonb) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare m public.markets; v jsonb; n int := 0;
+declare m public.markets; v jsonb; n int := 0; made int := 0;
 begin
   perform app.require_member();
   if exists (select 1 from public.markets where featured and status <> 'rejected' and clock_timestamp() >= entry_deadline) then
     raise exception 'The pool has closed' using errcode = 'P0001';
   end if;
-  if p_picks is null or jsonb_typeof(p_picks) <> 'object' then raise exception 'Make every pick on the ballot'; end if;
+  if p_picks is null or jsonb_typeof(p_picks) <> 'object' then raise exception 'Make at least one pick'; end if;
   perform set_config('app.ballot', 'on', true);
   for m in select * from public.markets where featured and status = 'open' order by sort_order, id loop
-    v := p_picks -> (m.id::text);
-    if v is null or jsonb_typeof(v) <> 'object' then
-      raise exception 'Make every pick on the ballot (% is missing)', m.title;
-    end if;
+    v := coalesce(p_picks -> (m.id::text), '{}'::jsonb);
+    if jsonb_typeof(v) <> 'object' then raise exception '%: unreadable pick', m.title; end if;
+    if v ?| array['winner_id', 'shares', 'seats'] then made := made + 1; end if;
     begin
       insert into public.entries (market_id, user_id, winner_id, shares, seats, commitment_cents)
       values (m.id, auth.uid(), v ->> 'winner_id', v -> 'shares', v -> 'seats', 0)
@@ -338,7 +344,8 @@ begin
   end loop;
   perform set_config('app.ballot', '', true);
   if n = 0 then raise exception 'The ballot is not open'; end if;
-  return jsonb_build_object('picks', n, 'submitted_at', clock_timestamp());
+  if made = 0 then raise exception 'Make at least one pick'; end if;
+  return jsonb_build_object('picks', made, 'blank', n - made, 'submitted_at', clock_timestamp());
 end $$;
 
 create function public.withdraw_ballot() returns int
@@ -390,7 +397,8 @@ begin
                                                       m.polling_ref ->> 'district', (m.polling_ref ->> 'special')::boolean)),
           'tally', case when v_closed then (
             select jsonb_build_object(
-              'n', count(*),
+              'n', count(*) filter (where e.winner_id is not null or e.seats is not null),
+              'blank', count(*) filter (where e.winner_id is null and e.seats is null),
               'picks', (select coalesce(jsonb_object_agg(x.w, x.c), '{}'::jsonb)
                         from (select e2.winner_id w, count(*) c from public.entries e2
                               where e2.market_id = m.id and e2.winner_id is not null group by 1) x),
@@ -590,7 +598,13 @@ begin
   end loop;
 end $$;
 
-update public.group_settings set default_buy_in_cents = 500;
+-- Picks close a week before the polls: Tuesday Oct 27, 11:59 p.m. Eastern (EDT, UTC-4). The admin can move it.
+-- Open markets still on the old default follow.
+update public.markets m set entry_deadline = '2026-10-28 03:59:00+00'
+from public.group_settings g
+where m.status = 'open' and m.entry_deadline = g.default_deadline and clock_timestamp() < '2026-10-28 03:59:00+00';
+update public.group_settings set default_buy_in_cents = 500, default_deadline = '2026-10-28 03:59:00+00'
+where clock_timestamp() < '2026-10-28 03:59:00+00';
 
 -- Open side bets that nobody has entered yet move to the new terms.
 update public.markets m set buy_in_cents = 500, has_other = false,

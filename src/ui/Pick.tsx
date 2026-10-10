@@ -59,14 +59,20 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
             <button key={c.id} type="button" role="radio" aria-checked={on} disabled={disabled}
               className={`cand cand-${s.toLowerCase()}${on ? ' on' : ''}`} onClick={() => choose(c.id)}>
               <span className="cand-name">{c.name}</span>
-              <span className="cand-meta">{s === 'I' ? 'Independent' : s === 'D' ? 'Democrat' : 'Republican'}{polls && ` · polls ${polls[c.id].toFixed(1)}%`}</span>
+              <span className="cand-meta">{s === 'I' ? 'Independent' : s === 'D' ? 'Democrat' : 'Republican'}{polls && ` · ${polls[c.id].toFixed(1)}% two-way in polls`}</span>
             </button>
           )
         })}
       </div>
+      {polls && polling?.dem_avg != null && polling.rep_avg != null && (
+        <p className="twoway">
+          Polls: {lastName(m.candidates[0].name, m.candidates[0].name)} {polling.dem_avg.toFixed(1)}, {lastName(m.candidates[1].name, m.candidates[1].name)} {polling.rep_avg.toFixed(1)}
+          {' '}→ <b>{polls[m.candidates[0].id].toFixed(1)} to {polls[m.candidates[1].id].toFixed(1)}</b> two-way
+        </p>
+      )}
       {w && (
         <div className="share">
-          <label htmlFor={`share-${m.id}`}>{lastName(w.name, w.name)}&rsquo;s share of the two-way vote</label>
+          <label htmlFor={`share-${m.id}`}>{lastName(w.name, w.name)}&rsquo;s two-way vote share</label>
           <div className="share-row">
             <button type="button" className="btn ghost step" disabled={disabled} aria-label="Lower by 0.5" onClick={() => onChange({ ...value, share: step(value?.share, -0.5) })}>−</button>
             <span className="share-box">

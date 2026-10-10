@@ -70,7 +70,7 @@ describe('the slate', () => {
     expect(p.ballot_cents).toBe(5000)
     expect(p.markets.filter((m) => m.kind === 'senate').every((m) => m.buy_in_cents === 400 && !m.has_other)).toBe(true)
     expect(p.markets.filter((m) => m.kind !== 'senate').every((m) => m.buy_in_cents === 500)).toBe(true)
-    expect(new Date(p.deadline).toISOString()).toBe('2026-11-03T01:00:00.000Z')
+    expect(new Date(p.deadline).toISOString()).toBe('2026-10-28T03:59:00.000Z') // Oct 27, 11:59 p.m. ET
     const ne = p.markets.find((m) => m.title === 'Nebraska Senate')!
     expect(ne.candidates.map((c) => [c.name, c.party])).toEqual([['Dan Osborn', 'I'], ['Pete Ricketts', 'R']])
     expect(p.senate).toHaveLength(35)
@@ -101,17 +101,31 @@ describe('the ballot', () => {
     await expect(submit(U.sam, await ballot())).rejects.toThrow(/members only/i)
   })
 
-  test('all or nothing: a missing or bad pick saves nothing', async () => {
+  test('all or nothing: a bad pick saves nothing; no picks at all is refused', async () => {
     const full = await ballot()
     const ia = await byKind('senate', 'Iowa')
-    const { [ia.id]: _, ...missing } = full
-    await expect(submit(U.maya, missing)).rejects.toThrow(/Iowa Senate is missing/)
+    await expect(submit(U.maya, {})).rejects.toThrow(/at least one pick/)
+    await expect(submit(U.maya, { [ia.id]: {} })).rejects.toThrow(/at least one pick/)
+    await expect(submit(U.maya, { ...full, [ia.id]: { winner_id: 'c1' } })).rejects.toThrow(/Iowa Senate: .*share/)
     await expect(submit(U.maya, { ...full, [ia.id]: { winner_id: 'c1', shares: { c1: 480, c2: 520 } } })).rejects.toThrow(/Iowa Senate: .*more than 50%/)
     await expect(submit(U.maya, { ...full, [ia.id]: { winner_id: 'c1', shares: { c1: 520, c2: 470 } } })).rejects.toThrow(/total exactly/)
     const seats = await byKind('senate_seats')
     await expect(submit(U.maya, { ...full, [seats.id]: { seats: { r: 101 } } })).rejects.toThrow(/Senate seats: Republican seats must be a whole number from 0 to 100/)
     await expect(submit(U.maya, { ...full, [seats.id]: { seats: { r: 48.5 } } })).rejects.toThrow(/whole number/)
     expect((await db.query(`select count(*)::int c from public.entries`)).rows[0]).toEqual({ c: 0 })
+  })
+
+  test('a skipped pick is entered blank: its stake still goes in that pot, and the ballot is still $50', async () => {
+    const full = await ballot()
+    const ia = await byKind('senate', 'Iowa')
+    const house = await byKind('house_seats')
+    const { [ia.id]: _, ...missing } = full
+    const r = await submit(U.maya, { ...missing, [house.id]: {} }) as { picks: number; blank: number }
+    expect([r.picks, r.blank]).toEqual([10, 2])
+    const p = await pool()
+    expect([p.ballots, p.pot_cents]).toEqual([1, 5000])
+    expect(p.my_ballot![ia.id]).toEqual({ winner_id: null, shares: null, seats: null })
+    expect(p.markets.find((m) => m.id === ia.id)!.pool_cents).toBe(400)
   })
 
   test('submit, resubmit, withdraw; the stake is per pick and the ballot totals $50', async () => {
@@ -166,11 +180,12 @@ describe('sealed until close, then revealed', () => {
     const ia = await byKind('senate', 'Iowa')
     await submit(U.dev, await ballot(560, 50, 210, { [ia.id]: { winner_id: 'c2', shares: { c1: 450, c2: 550 } } }))
     await submit(U.priya, await ballot(510, 53, 220))
+    await submit(U.jake, await ballot(510, 50, 210, { [ia.id]: {} }))
     await closePool()
 
     const visitor = await pool(null)
-    const t = visitor.markets.find((m) => m.id === ia.id)!.tally!
-    expect(t.n).toBe(3)
+    const t = visitor.markets.find((m) => m.id === ia.id)!.tally! as PoolMarket['tally'] & { blank: number }
+    expect([t.n, t.blank]).toEqual([3, 1])
     expect(t.picks).toEqual({ c1: 2, c2: 1 })
     expect(t.mean_shares).toEqual({ c1: 493.3, c2: 506.7 })
     const st = visitor.markets.find((m) => m.kind === 'senate_seats')!.tally!
@@ -179,7 +194,7 @@ describe('sealed until close, then revealed', () => {
     expect(JSON.stringify(visitor)).not.toMatch(/Maya|Dev|Priya/)
 
     const asMaya = await pool(U.maya)
-    expect(asMaya.ballots_grid).toHaveLength(3)
+    expect(asMaya.ballots_grid).toHaveLength(4)
     expect(asMaya.ballots_grid!.filter((b) => b.you)).toHaveLength(1)
     const mine = asMaya.ballots_grid!.find((b) => b.you)!
     expect(mine.picks[ia.id]).toEqual({ w: 'c1', s: 520 })
@@ -194,14 +209,16 @@ describe('scoring', () => {
     await submit(U.maya, await ballot(518))
     await submit(U.dev, await ballot(560))
     await submit(U.priya, await ballot(510, 48, 205, { [ia.id]: { winner_id: 'c2', shares: { c1: 485, c2: 515 } } }))
+    await submit(U.jake, await ballot(515, 48, 205, { [ia.id]: {} })) // skipped Iowa: in the pot, can't win
     await closePool()
     await rpc(db, U.jake, 'enter_result', { p_market: ia.id, p_winner: 'c1', p_share_tenths: 515, p_seats: null, p_source_url: 'https://example.test/ia' })
     await rpc(db, U.jake, 'confirm_settlement', { p_market: ia.id })
     const m = await rpc<{ payouts: { user_id: string; gross_cents: number; eligible: boolean }[] }>(db, U.jake, 'get_market', { p_id: ia.id })
     const by = Object.fromEntries(m.payouts.map((x) => [x.user_id, x]))
-    expect(by[U.maya]).toMatchObject({ gross_cents: 1200, eligible: true })
+    expect(by[U.maya]).toMatchObject({ gross_cents: 1600, eligible: true })
     expect(by[U.dev]).toMatchObject({ gross_cents: 0, eligible: true })
     expect(by[U.priya]).toMatchObject({ gross_cents: 0, eligible: false })
+    expect(by[U.jake]).toMatchObject({ gross_cents: 0, eligible: false })
   })
 
   test('seats: the closest Republican seat count takes the pot; ties split', async () => {
@@ -209,6 +226,7 @@ describe('scoring', () => {
     await submit(U.maya, await ballot(520, 47))
     await submit(U.dev, await ballot(520, 49))
     await submit(U.priya, await ballot(520, 52))
+    await submit(U.jake, await ballot(520, 48, 205, { [sen.id]: {} })) // skipped: adds $5, can't win even though 48 is exact
     await closePool()
     await expect(rpc(db, U.jake, 'enter_result', { p_market: sen.id, p_winner: null, p_share_tenths: null, p_seats: { r: 101 }, p_source_url: 'https://example.test/s' })).rejects.toThrow(/0 to 100/)
     await rpc(db, U.jake, 'enter_result', { p_market: sen.id, p_winner: null, p_share_tenths: null, p_seats: { r: 48 }, p_source_url: 'https://example.test/s' })
@@ -216,7 +234,7 @@ describe('scoring', () => {
     const m = await rpc<{ payouts: { user_id: string; gross_cents: number; error_value: number }[]; market: { result_seats: unknown } }>(db, U.jake, 'get_market', { p_id: sen.id })
     expect(m.market.result_seats).toEqual({ r: 48 })
     const by = Object.fromEntries(m.payouts.map((x) => [x.user_id, x]))
-    expect([by[U.maya].gross_cents, by[U.dev].gross_cents, by[U.priya].gross_cents]).toEqual([750, 750, 0])
+    expect([by[U.maya].gross_cents, by[U.dev].gross_cents, by[U.priya].gross_cents, by[U.jake].gross_cents]).toEqual([1000, 1000, 0, 0])
     expect([by[U.maya].error_value, by[U.dev].error_value, by[U.priya].error_value]).toEqual([1, 1, 4])
   })
 })
@@ -265,7 +283,7 @@ describe('side bets', () => {
     const mid = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'az', p_district: '1' })
     const m = (await rpc<Record<string, any>[]>(db, U.dev, 'list_markets')).find((x) => x.id === mid)!
     expect(m).toMatchObject({ buy_in_cents: 500, has_other: false, featured: false })
-    expect(m.rules_note).toMatch(/two-candidate vote.*Arizona/)
+    expect(m.rules_note).toMatch(/two-way vote share.*Arizona.*48% to 42% result with 10% for others is 53.3% to 46.7% two-way/)
     await rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c2', p_shares: { c1: 470, c2: 530 } })
     await boardNames('senate:IA::0', 'Josh Turek', 'Ashley Hinson')
     await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'IA' })).rejects.toThrow(/already has a bet/)

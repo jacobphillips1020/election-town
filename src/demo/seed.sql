@@ -22,14 +22,15 @@ insert into public.members (user_id)
 update public.group_settings set pay_note = 'Venmo the organizer $50 before the pool closes (demo).';
 
 -- A ballot from a compact spec: 'AK 1 51.2, GA 1 54.0, ...' (state, candidate 1 or 2, two-way share).
+-- States left out, and null seat counts, are submitted blank.
 create function public.demo_ballot(p_who uuid, p_spec text, p_senate_r int, p_house_r int) returns void
 language plpgsql as $$
 declare v jsonb := '{}'; m public.markets; part text; f text[]; w int; s int;
 begin
   perform set_config('request.jwt.claim.sub', p_who::text, false);
   for m in select * from public.markets where featured and status = 'open' loop
-    if m.kind = 'senate_seats' then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_senate_r)));
-    elsif m.kind = 'house_seats' then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_house_r)));
+    if m.kind = 'senate_seats' and p_senate_r is not null then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_senate_r)));
+    elsif m.kind = 'house_seats' and p_house_r is not null then v := v || jsonb_build_object(m.id, jsonb_build_object('seats', jsonb_build_object('r', p_house_r)));
     else
       foreach part in array string_to_array(p_spec, ',') loop
         f := regexp_split_to_array(btrim(part), '\s+');
@@ -53,10 +54,10 @@ declare
   alex uuid := 'd0000000-0000-4000-8000-000000000005';
   ny17 uuid; ks uuid; mn uuid;
 begin
-  -- The main pool: three ballots in (Alex hasn't filled one out yet).
+  -- The main pool: three ballots in (Alex hasn't filled one out yet; Priya left Texas and the House blank for now).
   perform public.demo_ballot(maya, 'AK 1 51.0, GA 1 54.5, IA 2 50.5, ME 1 51.5, MI 1 51.0, NE 2 51.0, NH 1 53.0, NC 1 54.0, OH 1 51.5, TX 2 50.5', 48, 202);
   perform public.demo_ballot(dev,  'AK 2 50.5, GA 1 53.0, IA 2 51.0, ME 2 50.5, MI 1 50.5, NE 2 52.0, NH 1 52.0, NC 1 53.5, OH 2 50.5, TX 2 52.0', 51, 214);
-  perform public.demo_ballot(priya,'AK 1 52.0, GA 1 55.0, IA 1 50.5, ME 1 52.0, MI 1 52.5, NE 1 50.5, NH 1 54.0, NC 1 55.0, OH 1 52.0, TX 1 50.5', 45, 196);
+  perform public.demo_ballot(priya,'AK 1 52.0, GA 1 55.0, IA 1 50.5, ME 1 52.0, MI 1 52.5, NE 1 50.5, NH 1 54.0, NC 1 55.0, OH 1 52.0', 45, null);
 
   -- Side bets: NY-17 open, Kansas closed (picks revealed), Minnesota settled.
   perform set_config('request.jwt.claim.sub', dev::text, false);

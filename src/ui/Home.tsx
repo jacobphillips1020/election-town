@@ -34,7 +34,8 @@ export function HomePage() {
 }
 
 function Dashboard({ pool }: { pool: Pool }) {
-  const mine = useMemo<Draft | null>(() => (pool.my_ballot ? draftFromBallot(pool.my_ballot) : currentDraft()?.draft ?? null), [pool.my_ballot])
+  const { uid } = useApp()
+  const mine = useMemo<Draft | null>(() => currentDraft(uid, pool.my_updated_at)?.draft ?? (pool.my_ballot ? draftFromBallot(pool.my_ballot) : null), [uid, pool.my_ballot, pool.my_updated_at])
   const submitted = !!pool.my_ballot && Object.keys(pool.my_ballot).length > 0
   const [mode, setMode] = useState<Mode>(pool.closed ? 'group' : 'polls')
   const [sel, setSel] = useState<string | null>(null)
@@ -121,6 +122,7 @@ function Dashboard({ pool }: { pool: Pool }) {
 }
 
 function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
+  const blank = Object.values(pool.my_ballot ?? {}).filter((e) => !e.winner_id && !e.seats).length
   return (
     <section className="hero">
       <div>
@@ -137,8 +139,13 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
       </div>
       {!pool.closed && (
         <div className="hero-cta">
-          <Link className="btn big" to="/ballot">{submitted ? 'Edit my ballot' : 'Fill out my ballot'}</Link>
+          <Link className="btn big" to="/ballot">{!submitted ? 'Fill out my ballot' : blank ? 'Finish my ballot' : 'Edit my ballot'}</Link>
           {submitted && <Link className="btn ghost big" to="/card">Share my picks</Link>}
+          <p className="hero-note">
+            {!submitted ? 'Submit what you have and come back to finish or change it any time before the close.'
+              : blank ? `You're in. ${blank} ${blank === 1 ? 'pick is' : 'picks are'} still blank; fill ${blank === 1 ? 'it' : 'them'} in any time before the close.`
+              : "You're in. Change any pick until the close."}
+          </p>
         </div>
       )}
       {pool.closed && submitted && <div className="hero-cta"><Link className="btn ghost big" to="/card">My picks card</Link></div>}
@@ -204,6 +211,7 @@ function Split({ m }: { m: PoolMarket }) {
 function YouVsGroup({ m, pool }: { m: PoolMarket; pool: Pool }) {
   const mine = pool.my_ballot?.[m.id]
   if (!mine) return null
+  if (!mine.seats && !mine.winner_id) return <p className="small muted">You left this one blank{pool.closed ? '' : ' so far'}.</p>
   if (mine.seats) {
     const mean = m.tally?.r_mean
     return <p className="small">You: <b>{mine.seats.r}</b> Republican seats{mean != null && <> · group average {mean} ({mine.seats.r - mean > 0 ? '+' : ''}{(mine.seats.r - mean).toFixed(1)})</>}</p>
@@ -360,10 +368,11 @@ function GroupGrid({ pool }: { pool: Pool }) {
             {races.map((m) => {
               const first = m.candidates[0]
               const n = cols.filter((b) => b.picks[m.id]?.w === first.id).length
+              const made = cols.filter((b) => b.picks[m.id]?.w).length
               return (
                 <tr key={m.id}>
                   <th scope="row">{stateName(m.polling_ref!.state)}</th>
-                  <td className="num">{Math.round((n / cols.length) * 100)}%</td>
+                  <td className="num">{made ? `${Math.round((n / made) * 100)}%` : '–'}</td>
                   {cols.map((b, i) => {
                     const c = m.candidates.find((x) => x.id === b.picks[m.id]?.w)
                     const s = b.picks[m.id]?.s

@@ -254,7 +254,7 @@ function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => voi
 
 /* ------------------------------------------------------------ results */
 
-type Preview = { outcome: string; pool_cents: number; rows: { entry_id: string; display_name: string; eligible: boolean; error_value: number | null; gross_cents: number; refund_cents: number }[] }
+type Preview = { outcome: string; pool_cents: number; rows: { entry_id: string; display_name: string; winner_id: string | null; seats: unknown; eligible: boolean; error_value: number | null; gross_cents: number; refund_cents: number }[] }
 
 function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
   const { backend } = useApp()
@@ -362,7 +362,7 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
               {preview.rows.map((r) => (
                 <tr key={r.entry_id}>
                   <td>{r.display_name}</td>
-                  <td>{congress || seatKind ? 'In' : r.eligible ? 'Picked the winner' : 'Wrong winner'}</td>
+                  <td>{!r.winner_id && !r.seats ? 'Left blank' : congress || seatKind ? 'In' : r.eligible ? 'Picked the winner' : 'Wrong winner'}</td>
                   <td className="num">{r.error_value === null ? '—' : congress || seatKind ? `${r.error_value} seats` : pct(r.error_value)}</td>
                   <td className="num">{r.gross_cents > 0 ? usd(r.gross_cents) : r.refund_cents > 0 ? `Refund ${usd(r.refund_cents)}` : '—'}</td>
                 </tr>

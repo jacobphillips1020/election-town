@@ -537,9 +537,9 @@ describe('launching a market', () => {
       title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'open', outcome_basis: 'single_round', has_other: false,
       buy_in_cents: 500, polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
     })
-    expect(new Date(m.entry_deadline).toISOString()).toBe('2026-11-03T01:00:00.000Z')
+    expect(new Date(m.entry_deadline).toISOString()).toBe('2026-10-28T03:59:00.000Z')
     expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
-    expect(m.rules_note).toMatch(/two-candidate vote.*certified results published by Arizona/)
+    expect(m.rules_note).toMatch(/two-way vote share.*certified results published by Arizona/)
     // the launcher can bet straight away
     await rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480 } })
   })

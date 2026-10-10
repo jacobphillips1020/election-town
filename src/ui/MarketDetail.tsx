@@ -61,8 +61,8 @@ function OnBallot({ d }: { d: MarketDetail }) {
   const mine = e ? draftFromBallot({ [m.id]: { winner_id: e.winner_id, shares: e.shares as Record<string, number> | null, seats: e.seats as { r: number } | null } })[m.id] : null
   return (
     <div className="callout">
-      This pick is on the main ballot{mine ? <>: you picked <b>{mine.r ? `${mine.r} Republican seats` : `${m.candidates.find((c) => c.id === mine.winner)?.name} ${mine.share}%`}</b>.</> : '.'}
-      {' '}<Link to="/ballot">{mine ? 'Change it on your ballot' : 'Fill out your ballot'}</Link>
+      This pick is on the main ballot{mine ? <>: you picked <b>{mine.r ? `${mine.r} Republican seats` : `${m.candidates.find((c) => c.id === mine.winner)?.name} ${mine.share}%`}</b>.</> : e ? ': you left it blank so far.' : '.'}
+      {' '}<Link to="/ballot">{mine ? 'Change it on your ballot' : e ? 'Fill it in on your ballot' : 'Fill out your ballot'}</Link>
       <span className="muted"> · Picks are sealed until the pool closes.</span>
     </div>
   )
@@ -190,18 +190,19 @@ function ResultSummary({ m, run, runs }: { m: Market; run: Run; runs: Run[] }) {
   )
 }
 
-function payCell(p: Payout | undefined, run: Run | undefined, race: boolean) {
+function payCell(p: Payout | undefined, run: Run | undefined, race: boolean, blank: boolean) {
   if (!p || !run) return '—'
   if (p.gross_cents > 0) return <span className="win">{usd(p.gross_cents)}</span>
   if (p.refund_cents > 0) return <span>Refunded {usd(p.refund_cents)}</span>
+  if (blank) return <span className="wrong">Left blank</span>
   if (race && !p.eligible) return <span className="wrong">Wrong winner</span>
   return <span className="wrong">—</span>
 }
 
 function RaceReveal({ m, entries, pay, settled, run }: { m: Market; entries: Entry[]; pay: Map<string, Payout>; settled: boolean; run: Run | undefined }) {
   const { uid } = useApp()
-  const n = entries.length
-  const name = (id: string | null) => m.candidates.find((c) => c.id === id)?.name ?? ''
+  const n = entries.filter((e) => e.winner_id).length
+  const name = (id: string | null) => m.candidates.find((c) => c.id === id)?.name ?? 'No pick'
   const sharesOf = (e: Entry) => e.shares as Record<string, number> | null
   return (
     <>
@@ -233,10 +234,10 @@ function RaceReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
               return (
                 <tr key={e.id}>
                   <td>{e.display_name}{e.user_id === uid && <span className="muted"> (you)</span>}</td>
-                  <td>{lastName(name(e.winner_id), name(e.winner_id))}</td>
+                  <td className={e.winner_id ? '' : 'wrong'}>{lastName(name(e.winner_id), name(e.winner_id))}</td>
                   <td className="num">{s && e.winner_id ? `${(s[e.winner_id] / 10).toFixed(1)}%` : '—'}</td>
                   {settled && <td className="num">{p?.eligible && p.error_value !== null ? `${(p.error_value / 10).toFixed(1)} pts` : '—'}</td>}
-                  {settled && <td>{payCell(p, run, true)}</td>}
+                  {settled && <td>{payCell(p, run, true, !e.winner_id)}</td>}
                 </tr>
               )
             })}
@@ -251,7 +252,8 @@ function SeatReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
   const { uid } = useApp()
   const vals = entries.map((e) => (e.seats as { r?: number } | null)?.r).filter((x): x is number => typeof x === 'number')
   const mean = vals.reduce((a, b) => a + b, 0) / Math.max(1, vals.length)
-  const rows = [...entries].sort((a, b) => ((a.seats as { r: number }).r - (b.seats as { r: number }).r))
+  const r = (e: Entry) => (e.seats as { r?: number } | null)?.r
+  const rows = [...entries].sort((a, b) => (r(a) ?? 999) - (r(b) ?? 999))
   return (
     <>
       {vals.length > 0 && (
@@ -270,9 +272,9 @@ function SeatReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
               return (
                 <tr key={e.id}>
                   <td>{e.display_name}{e.user_id === uid && <span className="muted"> (you)</span>}</td>
-                  <td className="num">{(e.seats as { r: number }).r}</td>
+                  <td className="num">{r(e) ?? <span className="wrong">No pick</span>}</td>
                   {settled && <td className="num">{p?.error_value ?? '—'}</td>}
-                  {settled && <td>{payCell(p, run, false)}</td>}
+                  {settled && <td>{payCell(p, run, false, r(e) == null)}</td>}
                 </tr>
               )
             })}
