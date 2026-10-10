@@ -7,7 +7,7 @@ import type { Pool } from '../domain/pool'
 const SITE = 'https://election-town.vercel.app'
 
 /** What goes alongside the link. The link itself previews with the banner card (index.html / public/og.jpg). */
-export const INVITE_TEXT = 'Make your prediction for this year’s midterms and win money!'
+export const INVITE_TEXT = '🦅🦅🇺🇸 Make your prediction for this year’s midterms and win money! 🇺🇸🦅🦅🦅🦅'
 
 export function Invite({ pool, compact = false }: { pool: Pool; submitted?: boolean; compact?: boolean }) {
   const [msg, setMsg] = useState('')
