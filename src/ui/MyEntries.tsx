@@ -29,7 +29,7 @@ export function MyEntriesPage() {
 
   return (
     <main className="page" id="main">
-      <h1>My entries</h1>
+      <h1>My picks</h1>
       <Err>{error}</Err>
 
       <section className="section" aria-labelledby="bal">

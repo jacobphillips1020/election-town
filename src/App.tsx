@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppProvider, useApp } from './data/context'
 import { rememberDestination } from './lib'
 import { AuthPage } from './ui/Auth'
@@ -9,7 +9,7 @@ import { MarketsPage } from './ui/Markets'
 import { MarketPage } from './ui/MarketDetail'
 import { ProposePage } from './ui/Propose'
 import { MyEntriesPage } from './ui/MyEntries'
-import { FlagBanner, NinetiesFooter } from './ui/FlagBanner'
+import { Masthead, NinetiesFooter } from './ui/FlagBanner'
 import { AdminPage } from './ui/Admin'
 
 const DevBoard = import.meta.env.DEV ? lazy(() => import('./ui/DevBoard')) : null
@@ -54,38 +54,13 @@ function DemoBar() {
 }
 
 function Header() {
-  const { backend, uid, me } = useApp()
-  const loc = useLocation()
-  const next = encodeURIComponent(loc.pathname + loc.search)
   return (
     <>
       <a className="skip" href="#main">
         Skip to content
       </a>
       <DemoBar />
-      <FlagBanner />
-      <header className="top">
-        <div className="top-in">
-          <nav className="nav" aria-label="Main">
-            <NavLink to="/" end>Markets</NavLink>
-            {uid && me?.is_member && <NavLink to="/entries">My entries</NavLink>}
-            {me?.is_admin && <NavLink to="/admin">Admin</NavLink>}
-          </nav>
-          {uid ? (
-            <span className="who">
-              {me?.display_name}
-              <button className="btn ghost small" onClick={() => backend.signOut()}>
-                Sign out
-              </button>
-            </span>
-          ) : backend.mode === 'live' && !loc.pathname.startsWith('/auth') && (
-            <span className="who">
-              <Link className="btn ghost small" to={`/auth?next=${next}`}>Sign in</Link>
-              <Link className="btn small" to={`/auth?mode=signup&next=${next}`}>Sign up</Link>
-            </span>
-          )}
-        </div>
-      </header>
+      <Masthead />
     </>
   )
 }

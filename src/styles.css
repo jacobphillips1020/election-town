@@ -189,59 +189,36 @@ table.t td.num, table.t th.num { text-align: right; }
   .board-detail { animation: none; }
 }
 
-/* ---------- late-90s patriotic banner (decorative; the app below stays clean) ---------- */
-.flag-banner {
-  --flag-red: #b22234; --flag-blue: #1d2b64;
-  position: relative; overflow: hidden; height: 132px; isolation: isolate;
-  background: repeating-linear-gradient(to bottom, var(--flag-red) 0 calc(100% / 13), #fff calc(100% / 13) calc(200% / 13));
-  border-bottom: 4px ridge #c9a227;
+/* ---------- masthead: banner image + late-90s menu bar ---------- */
+.masthead { background: #0b1a3d; }
+.masthead-banner { display: block; max-width: 1400px; margin: 0 auto; line-height: 0; }
+.masthead-banner img { display: block; width: 100%; height: auto; }
+.menubar {
+  max-width: 1400px; margin: 0 auto; display: flex; align-items: stretch; flex-wrap: wrap;
+  background: #142a5c; border-top: 2px solid #c9a227;
 }
-.flag-canton {
-  position: absolute; left: 0; top: 0; width: 38%; height: calc(700% / 13); background-color: var(--flag-blue);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='18'%3E%3Cpath fill='%23fff' d='M6 2l1.2 3.6h3.8l-3.1 2.2 1.2 3.6L6 9.2 2.9 11.4l1.2-3.6L1 5.6h3.8z'/%3E%3Cpath fill='%23fff' d='M18 11l1.2 3.6h3.8l-3.1 2.2 1.2 3.6-3.1-2.2-3.1 2.2 1.2-3.6-3.1-2.2h3.8z'/%3E%3C/svg%3E");
-  background-size: 24px 18px;
+.menubar > a, .menubar summary {
+  font: 700 1rem/1 Georgia, "Times New Roman", serif; color: #fff; text-decoration: none; cursor: pointer;
+  padding: 12px 18px; list-style: none; white-space: nowrap;
 }
-/* the "wave": moving light and shadow bands, like a looping GIF */
-.flag-wave {
-  position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  background: repeating-linear-gradient(100deg, rgba(0,0,0,0) 0 60px, rgba(0,0,0,.16) 95px, rgba(255,255,255,.18) 135px, rgba(0,0,0,0) 170px);
-  background-size: 340px 100%;
-  animation: flagwave 5s linear infinite;
+.menubar summary::-webkit-details-marker { display: none; }
+.menubar > a:hover, .menubar summary:hover { background: rgba(255,255,255,.08); }
+.menubar > a[aria-current="page"] { background: #7d1426; }
+.menubar-fill { flex: 1; }
+.menubar-user { position: relative; }
+.menubar-menu {
+  position: absolute; right: 0; top: 100%; z-index: 20; min-width: 160px; background: var(--paper);
+  border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.15); display: flex; flex-direction: column;
 }
-@keyframes flagwave { to { background-position: 340px 0; } }
-
-.eagle { position: absolute; z-index: 2; width: 150px; top: 6px; left: -130px; filter: drop-shadow(2px 3px 0 rgba(0,0,0,.35)); animation: eagle-fly 14s linear infinite; }
-@keyframes eagle-fly {
-  0% { transform: translate(0, 10px); }
-  25% { transform: translate(calc(25vw + 30px), -4px); }
-  50% { transform: translate(calc(50vw + 60px), 12px); }
-  75% { transform: translate(calc(75vw + 95px), -2px); }
-  100% { transform: translate(calc(100vw + 140px), 8px); }
+.menubar-menu a, .menubar-menu button {
+  font: 600 .95rem system-ui, sans-serif; color: var(--ink); background: none; border: 0; text-align: left;
+  padding: 10px 14px; text-decoration: none; cursor: pointer;
 }
-.wing { transform-origin: 62px 32px; transform-box: view-box; animation: flap .45s ease-in-out infinite alternate; }
-@keyframes flap { from { transform: scaleY(1); } to { transform: scaleY(-.55); } }
-
-.flag-title {
-  position: absolute; z-index: 3; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-decoration: none; text-align: center; padding: 0 16px;
-}
-.wordart {
-  font-family: Impact, "Arial Black", "Helvetica Neue", sans-serif; font-weight: 900; text-transform: uppercase;
-  font-size: clamp(2rem, 7vw, 3.6rem); letter-spacing: .02em; line-height: 1;
-  background: linear-gradient(180deg, #fff6c9 0%, #ffd34d 45%, #e09b00 55%, #fff1a8 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: 2px #1d2b64;
-  filter: drop-shadow(3px 3px 0 #7a0f1d) drop-shadow(0 0 6px rgba(0,0,0,.35));
-  transform: perspective(300px) rotateX(8deg);
-}
-.flag-tagline {
-  margin-top: 8px; font: 800 .72rem/1.2 Verdana, Geneva, sans-serif; color: #fff; letter-spacing: .04em;
-  background: var(--flag-blue); padding: 3px 10px; border: 2px outset #c9a227; text-transform: uppercase;
-}
-@media (max-width: 30rem) {
-  .flag-banner { height: 112px; }
-  .eagle { width: 100px; }
-  .flag-tagline { font-size: .6rem; }
+.menubar-menu a:hover, .menubar-menu button:hover { background: #f1ece0; }
+@media (max-width: 40rem) {
+  /* phones: crop the banner in on the title */
+  .masthead-banner img { height: 84px; object-fit: cover; object-position: 4% 50%; }
+  .menubar > a, .menubar summary { font-size: .95rem; padding: 11px 14px; }
 }
 
 .nineties-footer { max-width: var(--max); margin: 0 auto; padding: 18px 16px 36px; text-align: center; font: .78rem/1.5 Verdana, Geneva, sans-serif; color: var(--ink); border-top: 3px double var(--line); }
