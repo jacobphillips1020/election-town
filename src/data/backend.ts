@@ -8,7 +8,8 @@ export interface Backend {
   userId(): string | null
   subscribe(cb: () => void): () => void
   signIn(email: string, password: string): Promise<void>
-  signUp(email: string, password: string, displayName: string, phone: string): Promise<{ needsVerification: boolean }>
+  /** loginId comes from loginIdFor(); phone is stored as the contact number. */
+  signUp(loginId: string, password: string, displayName: string, phone: string): Promise<{ needsVerification: boolean }>
   signOut(): Promise<void>
   /** Bearer token for the server-side polling endpoint (null in demo). */
   accessToken(): Promise<string | null>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { useAdminName, useApp, useRpc } from '../data/context'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
 import { formatET, pct, plural, usd } from '../domain/format'
 import { allocate, groupForecast, type Draft } from '../domain/race'
 import { HOUSE_TOTAL, SENATE_TOTAL, meanSeats, remainder } from '../domain/seats'
@@ -220,7 +220,7 @@ function EntrySection({ d, reload }: { d: MarketDetail; reload: () => void }) {
   if (e && !editing) return <Receipt m={m} e={e} onEdit={() => setEditing(true)} reload={reload} />
   return (
     <section className="section">
-      <h2>{e ? 'Edit your pick' : 'Your pick'}</h2>
+      <h2>{e ? 'Edit your pick' : 'Make your pick'}</h2>
       <p className="muted">Your pick stays hidden until entries close.</p>
       {m.kind === 'congress'
         ? <SeatForm m={m} existing={e} onSaved={() => { setEditing(false); reload() }} onCancel={e ? () => setEditing(false) : undefined} />
@@ -388,9 +388,7 @@ function RaceForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Ent
       )}
       <Err>{error}</Err>
       <div className="row">
-        <button className="btn" disabled={!a.shares || busy} onClick={submit}>
-          {existing ? 'Save changes' : `Enter for ${usd(m.buy_in_cents ?? 0)}`}
-        </button>
+        <EnterButton ready={!!a.shares} busy={busy} existing={!!existing} price={m.buy_in_cents ?? 0} onSubmit={submit} />
         {onCancel && <button className="btn ghost" onClick={onCancel}>Cancel</button>}
       </div>
     </div>
@@ -467,17 +465,43 @@ function SeatForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Ent
       {seats && <p className="callout">Your seat prediction is ready. Entry: {usd(m.buy_in_cents ?? 0)}.</p>}
       <Err>{error}</Err>
       <div className="row">
-        <button className="btn" disabled={!seats || busy} onClick={submit}>{existing ? 'Save changes' : `Enter for ${usd(m.buy_in_cents ?? 0)}`}</button>
+        <EnterButton ready={!!seats} busy={busy} existing={!!existing} price={m.buy_in_cents ?? 0} onSubmit={submit} />
         {onCancel && <button className="btn ghost" onClick={onCancel}>Cancel</button>}
       </div>
     </div>
   )
 }
 
+/** Members enter; visitors are sent to a 3-field sign-up and brought back to this race. */
+function EnterButton({ ready, busy, existing, price, onSubmit }: { ready: boolean; busy: boolean; existing: boolean; price: number; onSubmit: () => void }) {
+  const { signedIn, isMember, signupPath } = useAccount()
+  const loc = useLocation()
+  if (!signedIn) return <Link className="btn" to={signupPath(loc.pathname)}>Sign up to enter</Link>
+  if (!isMember) return <p className="callout warn">The group is invite-only right now. Ask the organizer for the invitation link to enter.</p>
+  return (
+    <button className="btn" disabled={!ready || busy} onClick={onSubmit}>
+      {existing ? 'Save changes' : `Enter for ${usd(price)}`}
+    </button>
+  )
+}
+
 /* -------------------------------------------------------------- reveal + results */
 
 function Reveal({ d }: { d: MarketDetail }) {
+  const { isMember, signedIn, signupPath } = useAccount()
+  const loc = useLocation()
   const m = d.market
+  if (!isMember) {
+    return (
+      <section className="section">
+        <div className="reveal-head"><h2 style={{ margin: 0 }}>Picks revealed</h2></div>
+        <p className="callout">
+          {plural(m.entrants, 'pick')} {m.entrants === 1 ? 'is' : 'are'} in. The picks and the group forecast are visible to the group.
+          {!signedIn && <> <Link to={signupPath(loc.pathname)}>Sign up</Link> to see who picked what.</>}
+        </p>
+      </section>
+    )
+  }
   const entries = d.entries ?? []
   const settled = m.phase === 'settled'
   const run = d.runs[d.runs.length - 1]

@@ -87,3 +87,13 @@ export function useAdminName(): string {
   const { me } = useApp()
   return me?.group?.admin_name ?? 'the organizer'
 }
+
+/** For actions that need an account: sends visitors to sign-up and back to where they were. */
+export function useAccount() {
+  const { uid, me } = useApp()
+  return {
+    signedIn: !!uid,
+    isMember: !!me?.is_member,
+    signupPath: (next: string) => `/auth?mode=signup&next=${encodeURIComponent(next)}`,
+  }
+}

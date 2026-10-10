@@ -39,6 +39,7 @@ export function createLiveBackend(url: string, anonKey: string): Backend {
       fail(error)
     },
     async signUp(email, password, displayName, phone) {
+      // email here is the derived login id (see loginIdFor)
       // "Confirm email" is turned OFF in Supabase, so no email is ever sent; the phone number is the contact.
       const { data, error } = await sb.auth.signUp({
         email,

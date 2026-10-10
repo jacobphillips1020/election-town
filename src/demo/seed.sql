@@ -1,6 +1,8 @@
 -- DEMO FIXTURES. Entirely fictional people, candidates, and numbers. Loaded only by the
 -- in-browser demo; never part of the migrations and never run against a real database.
 
+update public.group_settings set open_signup = false;  -- so 'Sam' starts outside the group
+
 insert into auth.users (id, email, raw_user_meta_data) values
   ('d0000000-0000-4000-8000-000000000001', 'admin@demo.invalid', '{"display_name":"Demo Admin"}'),
   ('d0000000-0000-4000-8000-000000000002', 'maya@demo.invalid',  '{"display_name":"Maya"}'),
@@ -94,3 +96,5 @@ begin
   perform public.record_transfer(alex, 'collected', 1000, current_date, 'Demo: paid by Venmo');
   perform set_config('request.jwt.claim.sub', '', false);
 end $$;
+
+update public.group_settings set open_signup = true;

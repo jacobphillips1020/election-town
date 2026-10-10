@@ -18,6 +18,8 @@ beforeEach(async () => {
   db = new PGlite()
   await db.exec(AUTH_STUB)
   for (const m of MIGRATIONS) await db.exec(m)
+  // Fixtures use invitations; open sign-up has its own tests below.
+  await db.exec('update public.group_settings set open_signup = false')
   for (const [k, uid] of Object.entries(U)) {
     await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`, [
       uid, `${k}@example.test`, JSON.stringify({ display_name: NAMES[k] }),
@@ -71,28 +73,40 @@ const payoutsFor = async (mid: string) =>
   (await rpc<{ payouts: Payout[] }>(db, U.jake, 'get_market', { p_id: mid })).payouts
 
 describe('authorization', () => {
-  test('anonymous users have no table or function access', async () => {
-    await expect(select(db, null, 'select * from public.markets')).rejects.toThrow(/permission denied/i)
-    await expect(select(db, null, 'select * from public.entries')).rejects.toThrow(/permission denied/i)
-    await expect(rpc(db, null, 'list_markets')).rejects.toThrow(/permission denied/i)
+  test('visitors can browse markets but never see picks, people, money, or contacts', async () => {
+    const mid = await openRace()
+    await pick(U.maya, mid, 'c1', 520, 480)
+    await pick(U.dev, mid, 'c2', 400, 600)
+    await backdate(mid)
+    for (const t of ['entries', 'profiles', 'payouts', 'members', 'money_transfers', 'member_contacts', 'invites', 'group_settings', 'admins']) {
+      await expect(select(db, null, `select * from public.${t}`), t).rejects.toThrow(/permission denied/i)
+    }
+    expect((await select(db, null, 'select id from public.markets')).length).toBeGreaterThan(0)
+    const list = await rpc<{ id: string; entrants: number; has_entry: boolean; proposed_by_name: string | null }[]>(db, null, 'list_markets')
+    expect(list.find((m) => m.id === mid)).toMatchObject({ entrants: 2, has_entry: false, proposed_by_name: null })
+    const m = await rpc<Record<string, unknown>>(db, null, 'get_market', { p_id: mid })
+    expect([m.entries, m.my_entry, m.payouts]).toEqual([null, null, []])
+    expect(JSON.stringify(m)).not.toMatch(/Maya|Dev|"shares"/)
+    expect((await rpc<unknown[]>(db, null, 'race_board')).length).toBe(506)
+    await expect(rpc(db, null, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow(/permission denied/i)
+    await expect(rpc(db, null, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/permission denied/i)
+    await expect(rpc(db, null, 'my_ledger')).rejects.toThrow(/permission denied/i)
   })
-
-  test('a signed-in non-member reads nothing and cannot call group functions', async () => {
+  test('a signed-in non-member can browse but cannot see picks or take part', async () => {
     const mid = await openRace()
     await pick(U.maya, mid, 'c1', 520, 480)
     await backdate(mid)
-    for (const t of ['markets', 'entries', 'members', 'settlement_runs', 'payouts', 'polling_snapshots', 'money_transfers', 'group_settings']) {
+    for (const t of ['entries', 'members', 'payouts', 'money_transfers', 'group_settings', 'member_contacts']) {
       expect(await select(db, U.sam, `select * from public.${t}`), t).toHaveLength(0)
     }
-    await expect(rpc(db, U.sam, 'list_markets')).rejects.toThrow(/members only/i)
-    await expect(rpc(db, U.sam, 'get_market', { p_id: mid })).rejects.toThrow(/members only/i)
-    await expect(rpc(db, U.sam, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow()
-    await expect(select(db, U.sam, `select * from app.market_stats('${mid}')`)).rejects.toThrow(/members only/i)
-    const me = await rpc<{ is_member: boolean; group: unknown }>(db, U.sam, 'get_me')
-    expect(me.is_member).toBe(false)
-    expect(me.group).toBeNull()
+    expect((await rpc<unknown[]>(db, U.sam, 'list_markets')).length).toBeGreaterThan(0)
+    const m = await rpc<{ entries: unknown }>(db, U.sam, 'get_market', { p_id: mid })
+    expect(m.entries).toBeNull()
+    await expect(rpc(db, U.sam, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow(/members only/i)
+    await expect(rpc(db, U.sam, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/members only/i)
+    const me = await rpc<{ is_member: boolean; group: unknown; open_signup: boolean }>(db, U.sam, 'get_me')
+    expect([me.is_member, me.group, me.open_signup]).toEqual([false, null, false])
   })
-
   test('a bad invitation does not grant membership; a revoked one is refused', async () => {
     await expect(rpc(db, U.sam, 'redeem_invite', { p_token: 'nope' })).rejects.toThrow(/not valid/i)
     const token = await rpc<string>(db, U.jake, 'create_invite')
@@ -567,5 +581,22 @@ describe('candidate placeholders', () => {
     })
     await expect(approve([{ name: 'Democratic nominee (to be confirmed)', party: 'D' }, { name: 'Real Name', party: 'R' }])).rejects.toThrow(/to be confirmed/i)
     await approve([{ name: 'Pat Example', party: 'D' }, { name: 'Lee Sample', party: 'R' }])
+  })
+})
+
+describe('open sign-up', () => {
+  test('while open, a new account joins the group automatically; the admin can switch it off', async () => {
+    await expect(rpc(db, U.maya, 'set_open_signup', { p_open: true })).rejects.toThrow(/admin only/i)
+    await rpc(db, U.jake, 'set_open_signup', { p_open: true })
+    await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'new@example.test', $2)`, [id(20), JSON.stringify({ display_name: 'Newbie', phone: '3125559999' })])
+    expect((await rpc<{ is_member: boolean }>(db, id(20), 'get_me')).is_member).toBe(true)
+
+    await rpc(db, U.jake, 'set_open_signup', { p_open: false })
+    await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'late@example.test', $2)`, [id(21), JSON.stringify({ display_name: 'Late', phone: '3125558888' })])
+    expect((await rpc<{ is_member: boolean }>(db, id(21), 'get_me')).is_member).toBe(false)
+    await expect(rpc(db, id(21), 'join_open_group')).rejects.toThrow(/invite-only/i)
+    await rpc(db, U.jake, 'set_open_signup', { p_open: true })
+    await rpc(db, id(21), 'join_open_group')
+    expect((await rpc<{ is_member: boolean }>(db, id(21), 'get_me')).is_member).toBe(true)
   })
 })

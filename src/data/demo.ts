@@ -5,7 +5,7 @@ import { AUTH_STUB, MIGRATIONS } from './migrations'
 import { rpc as pgRpc } from './pgliteRpc'
 import seedSql from '../demo/seed.sql?raw'
 
-const DB_NAME = 'idb://election-town-demo-v3'
+const DB_NAME = 'idb://election-town-demo-v4'
 const ACTOR_KEY = 'et-demo-actor'
 
 export const PERSONAS: Persona[] = [
@@ -73,7 +73,7 @@ export async function createDemoBackend(): Promise<Backend> {
     actAs,
     async resetDemo() {
       await db.close()
-      indexedDB.deleteDatabase('/pglite/election-town-demo-v3')
+      indexedDB.deleteDatabase('/pglite/election-town-demo-v4')
       window.location.reload()
     },
     signIn: async () => demoOnly(),

@@ -31,7 +31,7 @@ test('demo seed loads and keeps sealed picks sealed', async () => {
   const closed = byTitle('Example State')
   const shown = await rpc<{ entries: unknown[] }>(db, P(4), 'get_market', { p_id: closed.id })
   expect(shown.entries).toHaveLength(4)
-  await expect(rpc(db, P(6), 'get_market', { p_id: closed.id })).rejects.toThrow(/members only/i)
+  expect((await rpc<{ entries: unknown }>(db, P(6), 'get_market', { p_id: closed.id })).entries).toBeNull()
 
   // Settled market has a payout for each entrant; Dev (closest right winner) takes the $40 pool.
   const settled = await rpc<{ payouts: { user_id: string; gross_cents: number }[] }>(db, P(2), 'get_market', { p_id: byTitle('Sample District').id })

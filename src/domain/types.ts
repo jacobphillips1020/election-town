@@ -88,5 +88,6 @@ export type Me = {
   is_admin: boolean
   display_name: string | null
   has_phone: boolean
+  open_signup: boolean
   group: { name: string; default_buy_in_cents: number; default_deadline: string; admin_name: string | null } | null
 }

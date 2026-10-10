@@ -518,6 +518,24 @@ function LedgerTab() {
 
 /* ------------------------------------------------------------ group */
 
+function OpenSignup() {
+  const { backend, me, refreshMe } = useApp()
+  const a = useAction()
+  const open = (me?.group as { open_signup?: boolean } | null)?.open_signup ?? true
+  return (
+    <section className="section">
+      <h2>Who can join</h2>
+      <label style={{ fontWeight: 500 }}>
+        <input type="checkbox" checked={open} disabled={a.busy}
+          onChange={(e) => a.run(async () => { await backend.rpc('set_open_signup', { p_open: e.target.checked }); refreshMe() })} />
+        {' '}Anyone who signs up joins the group
+      </label>
+      <p className="hint">Turn this off to make the group invite-only: new accounts then need an invitation link. Anyone can browse either way.</p>
+      <Err>{a.error}</Err>
+    </section>
+  )
+}
+
 type Member = { user_id: string; display_name: string; phone: string | null; joined_at: string; is_admin: boolean }
 
 function Roster() {
@@ -589,6 +607,7 @@ function GroupTab() {
         })}>Save defaults</button>
       </section>
 
+      <OpenSignup />
       <Roster />
 
       <section className="section">

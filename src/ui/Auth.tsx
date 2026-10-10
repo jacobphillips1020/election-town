@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../data/context'
-import { safeNext } from '../lib'
+import { loginIdFor, normalizePhone, safeNext } from '../lib'
 import { Err } from './common'
 
 export function AuthPage() {
   const { backend, uid } = useApp()
   const [params] = useSearchParams()
   const next = safeNext(params.get('next'))
-  const [mode, setMode] = useState<'in' | 'up' | 'forgot'>('in')
+  const [mode, setMode] = useState<'in' | 'up' | 'forgot'>(params.get('mode') === 'signup' ? 'up' : 'in')
   const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
+  const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,71 +46,73 @@ export function AuthPage() {
     setError('')
     setInfo('')
     try {
-      if (mode === 'in') await backend.signIn(email.trim(), password)
-      else if (mode === 'up') {
+      if (mode === 'in') {
+        const id = loginIdFor(login)
+        if (!id) throw new Error('Enter your mobile number (or the email you signed up with).')
+        await backend.signIn(id, password)
+      } else if (mode === 'up') {
+        const phoneE164 = normalizePhone(phone)
         if (!name.trim()) throw new Error('Enter the name your friends will see.')
-        if (phone.replace(/\D/g, '').length < 10) throw new Error('Enter a phone number with area code.')
-        const r = await backend.signUp(email.trim(), password, name.trim(), phone.trim())
-        if (r.needsVerification) setInfo('Your account was created, but email confirmation is still switched on for this project. Ask the organizer to turn it off.')
+        if (!phoneE164) throw new Error('Enter a mobile number with area code.')
+        if (password.length < 8) throw new Error('Use at least 8 characters for your password.')
+        const r = await backend.signUp(loginIdFor(phoneE164)!, password, name.trim(), phoneE164)
+        if (r.needsVerification) setInfo('Your account was created, but this project still requires email confirmation. Tell the organizer.')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      const msg = err instanceof Error ? err.message : 'Something went wrong.'
+      setError(/already registered/i.test(msg) ? 'That number already has an account. Sign in instead.'
+        : /invalid login/i.test(msg) ? 'That number and password don’t match.' : msg)
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <main className="page" id="main" style={{ maxWidth: '28rem' }}>
-      <h1>{mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create your account' : 'Forgot your password?'}</h1>
+    <main className="page" id="main" style={{ maxWidth: '26rem' }}>
+      <h1>{mode === 'up' ? 'Sign up to play' : mode === 'in' ? 'Sign in' : 'Forgot your password?'}</h1>
+      {mode === 'up' && <p className="muted">A name your friends will see and a number the organizer can text. That&rsquo;s it.</p>}
       {mode === 'forgot' ? (
-        <p>
-          Election Town doesn&rsquo;t send emails. Text the person who invited you and ask them to reset your password;
-          they&rsquo;ll send you a temporary one.
-        </p>
+        <p>Text the organizer and ask them to reset your password; they&rsquo;ll send you a temporary one.</p>
       ) : (
-      <form onSubmit={submit} noValidate>
-        {mode === 'up' && (
-          <div className="field">
-            <label htmlFor="name">Display name</label>
-            <input id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="nickname" maxLength={40} required />
-            <p className="hint">Shown to the group. Your email and phone are never shown to other members.</p>
-          </div>
-        )}
-        {mode === 'up' && (
-          <div className="field">
-            <label htmlFor="phone">Mobile phone</label>
-            <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="(312) 555-0123" required />
-            <p className="hint">Only the organizer sees this. It&rsquo;s how they reach you about payments and deadlines.</p>
-          </div>
-        )}
-        <div className="field">
-          <label htmlFor="email">{mode === 'up' ? 'Email (just your login name; we never email it)' : 'Email'}</label>
-          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
-        </div>
-        {(
+        <form onSubmit={submit} noValidate>
+          {mode === 'up' ? (
+            <>
+              <div className="field">
+                <label htmlFor="name">Your name</label>
+                <input id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="nickname" maxLength={40} placeholder="e.g. Maya R." />
+              </div>
+              <div className="field">
+                <label htmlFor="phone">Mobile number</label>
+                <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="(312) 555-0123" />
+                <p className="hint">You sign in with it. Only the organizer can see it.</p>
+              </div>
+            </>
+          ) : (
+            <div className="field">
+              <label htmlFor="login">Mobile number</label>
+              <input id="login" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" placeholder="(312) 555-0123" />
+            </div>
+          )}
           <div className="field">
             <label htmlFor="pw">Password</label>
             <input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8}
-              autoComplete={mode === 'up' ? 'new-password' : 'current-password'} required />
+              autoComplete={mode === 'up' ? 'new-password' : 'current-password'} />
             {mode === 'up' && <p className="hint">At least 8 characters.</p>}
           </div>
-        )}
-        <Err>{error}</Err>
-        {info && <p className="ok" role="status">{info}</p>}
-        <button className="btn" disabled={busy}>
-          {mode === 'in' ? 'Sign in' : 'Create account'}
-        </button>
-      </form>
+          <Err>{error}</Err>
+          {info && <p className="ok" role="status">{info}</p>}
+          <button className="btn" disabled={busy} style={{ width: '100%' }}>{mode === 'up' ? 'Create account' : 'Sign in'}</button>
+        </form>
       )}
       <p className="small" style={{ marginTop: 16 }}>
-        {mode !== 'in' && <button className="btn ghost small" onClick={() => setMode('in')}>Back to sign in</button>}{' '}
+        {mode === 'up' && <>Already have an account? <button className="btn ghost small" onClick={() => setMode('in')}>Sign in</button></>}
         {mode === 'in' && (
           <>
-            <button className="btn ghost small" onClick={() => setMode('up')}>Create account</button>{' '}
+            New here? <button className="btn ghost small" onClick={() => setMode('up')}>Sign up</button>{' '}
             <button className="btn ghost small" onClick={() => setMode('forgot')}>Forgot password</button>
           </>
         )}
+        {mode === 'forgot' && <button className="btn ghost small" onClick={() => setMode('in')}>Back to sign in</button>}
       </p>
     </main>
   )

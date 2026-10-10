@@ -9,6 +9,7 @@ import { MarketsPage } from './ui/Markets'
 import { MarketPage } from './ui/MarketDetail'
 import { ProposePage } from './ui/Propose'
 import { MyEntriesPage } from './ui/MyEntries'
+import { FlagBanner, NinetiesFooter } from './ui/FlagBanner'
 import { AdminPage } from './ui/Admin'
 
 const DevBoard = import.meta.env.DEV ? lazy(() => import('./ui/DevBoard')) : null
@@ -54,36 +55,48 @@ function DemoBar() {
 
 function Header() {
   const { backend, uid, me } = useApp()
+  const loc = useLocation()
+  const next = encodeURIComponent(loc.pathname + loc.search)
   return (
     <>
       <a className="skip" href="#main">
         Skip to content
       </a>
       <DemoBar />
+      <FlagBanner />
       <header className="top">
         <div className="top-in">
-          <Link to="/" className="brand">
-            Election <span>Town</span>
-          </Link>
-          {uid && me?.is_member && (
-            <nav className="nav" aria-label="Main">
-              <NavLink to="/" end>Markets</NavLink>
-              <NavLink to="/entries">My entries</NavLink>
-              {me.is_admin && <NavLink to="/admin">Admin</NavLink>}
-            </nav>
-          )}
-          {uid && (
+          <nav className="nav" aria-label="Main">
+            <NavLink to="/" end>Markets</NavLink>
+            {uid && me?.is_member && <NavLink to="/entries">My entries</NavLink>}
+            {me?.is_admin && <NavLink to="/admin">Admin</NavLink>}
+          </nav>
+          {uid ? (
             <span className="who">
               {me?.display_name}
               <button className="btn ghost small" onClick={() => backend.signOut()}>
                 Sign out
               </button>
             </span>
+          ) : backend.mode === 'live' && !loc.pathname.startsWith('/auth') && (
+            <span className="who">
+              <Link className="btn ghost small" to={`/auth?next=${next}`}>Sign in</Link>
+              <Link className="btn small" to={`/auth?mode=signup&next=${next}`}>Sign up</Link>
+            </span>
           )}
         </div>
       </header>
     </>
   )
+}
+
+/** Joins automatically while sign-up is open (covers accounts created while the group was invite-only). */
+function AutoJoin() {
+  const { backend, uid, me, refreshMe } = useApp()
+  useEffect(() => {
+    if (uid && me && !me.is_member && me.open_signup) backend.rpc('join_open_group').then(refreshMe).catch(() => undefined)
+  }, [uid, me, backend, refreshMe])
+  return null
 }
 
 function NotMember() {
@@ -93,14 +106,15 @@ function NotMember() {
   }, [loc])
   return (
     <main className="page" id="main">
-      <h1>You&rsquo;re signed in, but not in the group yet</h1>
-      <p>Election Town is invite-only. Ask the person who invited you for the group invitation link and open it while signed in.</p>
-      {loc.pathname !== '/' && <p className="muted">After you join, you&rsquo;ll land back on the page you were trying to open.</p>}
+      <h1>The group is invite-only right now</h1>
+      <p>Ask the organizer for the invitation link and open it while signed in. You can keep browsing the markets meanwhile.</p>
+      <p><Link to="/">Browse markets</Link></p>
     </main>
   )
 }
 
-function Gate({ children }: { children: React.ReactNode }) {
+/** Private pages (My entries, Admin) need an account in the group. Browsing doesn't. */
+function Members({ children }: { children: React.ReactNode }) {
   const { uid, me, meLoading } = useApp()
   const loc = useLocation()
   if (!uid) return <Navigate to={`/auth?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />
@@ -114,20 +128,22 @@ function Shell() {
   return (
     <>
       <Header />
+      <AutoJoin />
       {/* key resets every screen's state when the signed-in person changes */}
       <div key={uid ?? 'anon'}>
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/join/:token" element={<JoinPage />} />
           {DevBoard && <Route path="/dev/board" element={<Suspense fallback={null}><DevBoard /></Suspense>} />}
-          <Route path="/" element={<Gate><MarketsPage /></Gate>} />
-          <Route path="/m/:id" element={<Gate><MarketPage /></Gate>} />
-          <Route path="/propose" element={<Gate><ProposePage /></Gate>} />
-          <Route path="/entries" element={<Gate><MyEntriesPage /></Gate>} />
-          <Route path="/admin" element={<Gate><AdminPage /></Gate>} />
+          <Route path="/" element={<MarketsPage />} />
+          <Route path="/m/:id" element={<MarketPage />} />
+          <Route path="/propose" element={<ProposePage />} />
+          <Route path="/entries" element={<Members><MyEntriesPage /></Members>} />
+          <Route path="/admin" element={<Members><AdminPage /></Members>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
+      <NinetiesFooter />
     </>
   )
 }

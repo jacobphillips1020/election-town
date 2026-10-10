@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAdminName, useApp, useRpc } from '../data/context'
+import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
 import { boardKey, type BoardRace } from '../domain/board'
 import { refreshBoardApi, refreshMarket } from '../polling/client'
 import { Loading } from './common'
@@ -15,16 +15,19 @@ export function ProposePage() {
   const [proposing, setProposing] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const account = useAccount()
 
   // Keep the board current: the server refreshes it at most every 12 hours, for everyone.
   useEffect(() => {
-    if (backend.mode !== 'live') return
+    if (backend.mode !== 'live' || !account.isMember) return
     setRefreshing(true)
     refreshBoardApi(backend).then((r) => { if (r?.status === 'refreshed') board.reload() }).finally(() => setRefreshing(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backend])
+  }, [backend, account.isMember])
 
   async function propose(r: BoardRace) {
+    if (!account.signedIn) return nav(account.signupPath('/propose'))
+    if (!account.isMember) return setError('The group is invite-only right now. Ask the organizer for the invitation link.')
     setProposing(boardKey(r))
     setError('')
     try {
