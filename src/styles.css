@@ -249,7 +249,7 @@ table.t td.num, table.t th.num { text-align: right; }
 .mu-d.mu-i { background: var(--ind); }
 
 /* hero */
-.hero { display: grid; gap: 12px 24px; grid-template-columns: 1fr auto; align-items: end; background: var(--paper);
+.hero { display: grid; gap: 12px 24px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; background: var(--paper);
   border: 1px solid var(--line); border-top: 4px solid #b22234; border-radius: 6px; padding: 18px 18px 16px; margin-top: 4px; }
 .hero h1 { font-family: Georgia, "Times New Roman", serif; font-size: 1.9rem; letter-spacing: -0.01em; margin: 2px 0 6px; }
 .hero-kicker { margin: 0; font: 700 .78rem/1 system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #8a6a14; }
@@ -258,9 +258,11 @@ table.t td.num, table.t th.num { text-align: right; }
 .hero-stats { display: flex; gap: 18px; text-align: right; }
 .hero-stats span { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .hero-stats b { font-size: 1.6rem; color: var(--ink); letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
-.hero-cta { grid-column: 1 / -1; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.hero-cta { grid-column: 1 / -1; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.hero-cta .btn { flex: 1 1 11rem; max-width: 100%; text-align: center; }
 .hero-note { margin: 0; font-size: .85rem; color: var(--muted); flex-basis: 100%; }
-.hero-pay { color: var(--ink); white-space: nowrap; }
+.hero > * { min-width: 0; }
+.hero-pay { color: var(--ink); overflow-wrap: anywhere; }
 .hero-pay a { color: #008cff; }
 
 /* invite friends */
@@ -278,7 +280,7 @@ table.t td.num, table.t th.num { text-align: right; }
 .invite .ok { color: #9fe0b6; flex-basis: 100%; }
 @media (max-width: 34rem) { .invite-actions .btn { flex: 1 1 auto; } }
 @media (max-width: 34rem) {
-  .hero { grid-template-columns: 1fr; }
+  .hero { grid-template-columns: minmax(0, 1fr); }
   .hero h1 { font-size: 1.55rem; }
   .hero-stats { text-align: left; }
   .hero-cta .btn { flex: 1 1 auto; }
