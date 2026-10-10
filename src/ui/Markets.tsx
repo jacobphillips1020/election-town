@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useApp, useRpc } from '../data/context'
+import { boardLabel, hasAverage, viewRaces, type BoardRace } from '../domain/board'
+import { MatchupBar } from './RaceBoard'
 import { formatET, plural, usd } from '../domain/format'
 import type { Kind, Market, Phase } from '../domain/types'
 import { Err, Loading, PhasePill } from './common'
@@ -11,11 +13,6 @@ const TABS: { id: string; label: string; phases: Phase[] }[] = [
   { id: 'settled', label: 'Settled', phases: ['settled', 'canceled'] },
   { id: 'proposed', label: 'Proposed', phases: ['proposed'] },
 ]
-const KINDS: { id: Kind | 'all'; label: string }[] = [
-  { id: 'all', label: 'All races' }, { id: 'senate', label: 'Senate' }, { id: 'house', label: 'House' },
-  { id: 'governor', label: 'Governor' }, { id: 'congress', label: 'Congress' },
-]
-
 export const KIND_LABEL: Record<Kind, string> = { senate: 'Senate', house: 'House', governor: 'Governor', congress: 'Congress' }
 
 export function MarketRow({ m }: { m: Market }) {
@@ -73,12 +70,11 @@ function PhonePrompt() {
 export function MarketsPage() {
   const { data, error, loading } = useRpc<Market[]>('list_markets')
   const [params, setParams] = useSearchParams()
-  const [kind, setKind] = useState<Kind | 'all'>('all')
   const tabId = params.get('tab') ?? 'open'
   const tab = TABS.find((t) => t.id === tabId) ?? TABS[0]
 
   const rows = (data ?? [])
-    .filter((m) => tab.phases.includes(m.phase) && (kind === 'all' || m.kind === kind))
+    .filter((m) => tab.phases.includes(m.phase))
     .sort((a, b) => (a.entry_deadline ?? '').localeCompare(b.entry_deadline ?? ''))
   const count = (t: (typeof TABS)[number]) => (data ?? []).filter((m) => t.phases.includes(m.phase)).length
 
@@ -96,19 +92,41 @@ export function MarketsPage() {
           </button>
         ))}
       </div>
-      <div className="filters" role="group" aria-label="Race type" style={{ marginTop: -4 }}>
-        {KINDS.map((k) => (
-          <button key={k.id} className="chip" aria-pressed={k.id === kind} onClick={() => setKind(k.id)}>
-            {k.label}
-          </button>
-        ))}
-      </div>
       <Err>{error}</Err>
       {loading && !data ? <Loading /> : rows.length === 0 ? (
         <p className="muted">Nothing here yet.{tab.id === 'open' && ' Propose a race to get things started.'}</p>
       ) : (
         <ul className="mlist">{rows.map((m) => <MarketRow key={m.id} m={m} />)}</ul>
       )}
+      <p className="hint" style={{ marginTop: 10 }}>Fixed buy-in per race. You can change or withdraw your pick any time until that race&rsquo;s entries close.</p>
+      {tab.id === 'open' && <ClosestRaces />}
     </main>
+  )
+}
+
+/** Home-page teaser: the tightest races nobody has proposed yet, one tap from the race board. */
+function ClosestRaces() {
+  const { data } = useRpc<BoardRace[]>('race_board')
+  const top = viewRaces((data ?? []).filter((r) => !r.market && hasAverage(r)), { query: '', kind: 'all', sort: 'closest' }).slice(0, 5)
+  if (top.length === 0) return null
+  return (
+    <section className="section" aria-labelledby="closest">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2 id="closest" style={{ margin: 0 }}>Closest races</h2>
+        <Link to="/propose" className="small">See all races →</Link>
+      </div>
+      <p className="hint" style={{ marginTop: 4 }}>Not in the pool yet. Tap one to propose it.</p>
+      <ul className="board-list">
+        {top.map((r) => (
+          <li key={`${r.race_type}${r.state}${r.district}${r.special}`} className="board-row">
+            <Link className="board-hit" to={`/propose?q=${encodeURIComponent(boardLabel(r).replace(' — ', ' '))}`}>
+              <span className="board-top"><span className="board-title">{boardLabel(r)}</span>
+                {r.polling?.rating && <span className="muted small">{r.polling.rating}</span>}</span>
+              <MatchupBar r={r} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

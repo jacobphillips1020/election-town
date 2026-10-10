@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
 import { boardKey, type BoardRace } from '../domain/board'
 import { refreshBoardApi, refreshMarket } from '../polling/client'
@@ -16,6 +16,7 @@ export function ProposePage() {
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const account = useAccount()
+  const [params] = useSearchParams()
 
   // Keep the board current: the server refreshes it at most every 12 hours, for everyone.
   useEffect(() => {
@@ -57,7 +58,7 @@ export function ProposePage() {
         {' '}{admin} approves it and sets the buy-in and entry deadline.
       </p>
       {board.loading && !board.data ? <Loading /> : (
-        <RaceBoard races={races} adminName={admin} onPropose={propose} proposing={proposing} error={error || board.error || ''} note={note} />
+        <RaceBoard races={races} adminName={admin} onPropose={propose} proposing={proposing} error={error || board.error || ''} note={note} initialQuery={params.get('q') ?? ''} />
       )}
     </main>
   )

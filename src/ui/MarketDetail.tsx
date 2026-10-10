@@ -189,7 +189,7 @@ function Rules({ m }: { m: Market }) {
     <section className="section">
       <h2>Rules</h2>
       <ul style={{ paddingLeft: '1.1rem', margin: 0 }}>
-        <li>Entries close {formatET(m.entry_deadline)}. Your pick stays hidden until entries close; then everyone&rsquo;s picks are revealed.</li>
+        <li>Entries close {formatET(m.entry_deadline)}. Until then you can change or withdraw your pick as often as you like, and it stays hidden; at close, everyone&rsquo;s picks are revealed.</li>
         <li>Fixed buy-in of {usd(m.buy_in_cents ?? 0)}. No odds, no variable stakes, no payments in the app: {admin} records transfers by hand.</li>
         {race ? (
           <>
@@ -221,7 +221,7 @@ function EntrySection({ d, reload }: { d: MarketDetail; reload: () => void }) {
   return (
     <section className="section">
       <h2>{e ? 'Edit your pick' : 'Make your pick'}</h2>
-      <p className="muted">Your pick stays hidden until entries close.</p>
+      <p className="muted">Your pick stays hidden until entries close, and you can change or withdraw it any time before {formatET(m.entry_deadline)}.</p>
       {m.kind === 'congress'
         ? <SeatForm m={m} existing={e} onSaved={() => { setEditing(false); reload() }} onCancel={e ? () => setEditing(false) : undefined} />
         : <RaceForm m={m} existing={e} onSaved={() => { setEditing(false); reload() }} onCancel={e ? () => setEditing(false) : undefined} />}

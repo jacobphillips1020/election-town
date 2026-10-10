@@ -8,16 +8,20 @@ import { Err, PartyTag } from './common'
 
 const PAGE = 30
 
-export function RaceBoard({ races, adminName, onPropose, proposing, error, note }: {
+export function RaceBoard({ races, adminName, onPropose, proposing, error, note, initialQuery = '' }: {
   races: BoardRace[]
   adminName: string
   onPropose: (r: BoardRace) => void
   proposing: string | null
   error: string
   note?: string
+  initialQuery?: string
 }) {
-  const [view, setView] = useState<BoardView>({ query: '', kind: 'all', sort: 'closest' })
-  const [open, setOpen] = useState<string | null>(null)
+  const [view, setView] = useState<BoardView>({ query: initialQuery, kind: 'all', sort: 'closest' })
+  const [open, setOpen] = useState<string | null>(() => {
+    const hits = initialQuery ? viewRaces(races, { query: initialQuery, kind: 'all', sort: 'closest' }) : []
+    return hits.length === 1 ? boardKey(hits[0]) : null
+  })
   const [shown, setShown] = useState(PAGE)
   const rows = useMemo(() => viewRaces(races, view), [races, view])
   const polled = races.filter(hasAverage).length
@@ -91,7 +95,7 @@ function shortDate(iso: string | null) {
   return iso ? new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
 }
 
-function MatchupBar({ r }: { r: BoardRace }) {
+export function MatchupBar({ r }: { r: BoardRace }) {
   const p = r.polling!
   const d = p.dem_avg!, rep = p.rep_avg!
   const lead = d > rep ? 'D' : rep > d ? 'R' : null
