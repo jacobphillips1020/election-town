@@ -11,7 +11,6 @@ const TABS: { id: string; label: string; phases: Phase[] }[] = [
   { id: 'open', label: 'Open', phases: ['open'] },
   { id: 'closed', label: 'Closed', phases: ['closed'] },
   { id: 'settled', label: 'Settled', phases: ['settled', 'canceled'] },
-  { id: 'proposed', label: 'Proposed', phases: ['proposed'] },
 ]
 export const KIND_LABEL: Record<Kind, string> = { senate: 'Senate', house: 'House', governor: 'Governor', congress: 'Congress' }
 
@@ -82,7 +81,7 @@ export function MarketsPage() {
     <main className="page" id="main">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h1 style={{ margin: 0 }}>Markets</h1>
-        <Link to="/propose" className="btn">Propose a race</Link>
+        <Link to="/open" className="btn">Open a market</Link>
       </div>
       <PhonePrompt />
       <div className="filters" role="group" aria-label="Status">
@@ -94,7 +93,7 @@ export function MarketsPage() {
       </div>
       <Err>{error}</Err>
       {loading && !data ? <Loading /> : rows.length === 0 ? (
-        <p className="muted">Nothing here yet.{tab.id === 'open' && ' Propose a race to get things started.'}</p>
+        <p className="muted">Nothing here yet.{tab.id === 'open' && ' Open a market to get things started.'}</p>
       ) : (
         <ul className="mlist">{rows.map((m) => <MarketRow key={m.id} m={m} />)}</ul>
       )}
@@ -104,22 +103,22 @@ export function MarketsPage() {
   )
 }
 
-/** Home-page teaser: the tightest races nobody has proposed yet, one tap from the race board. */
+/** Home-page teaser: the tightest races without a market yet, one tap from opening one. */
 function ClosestRaces() {
   const { data } = useRpc<BoardRace[]>('race_board')
-  const top = viewRaces((data ?? []).filter((r) => !r.market && hasAverage(r)), { query: '', kind: 'all', sort: 'closest' }).slice(0, 5)
+  const top = viewRaces((data ?? []).filter((r) => !r.market && hasAverage(r) && r.polling?.dem_name && r.polling?.rep_name), { query: '', kind: 'all', sort: 'closest' }).slice(0, 5)
   if (top.length === 0) return null
   return (
     <section className="section" aria-labelledby="closest">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h2 id="closest" style={{ margin: 0 }}>Closest races</h2>
-        <Link to="/propose" className="small">See all races →</Link>
+        <Link to="/open" className="small">See all races →</Link>
       </div>
-      <p className="hint" style={{ marginTop: 4 }}>Not in the pool yet. Tap one to propose it.</p>
+      <p className="hint" style={{ marginTop: 4 }}>No market yet. Tap one to open its market and place your bet.</p>
       <ul className="board-list">
         {top.map((r) => (
           <li key={`${r.race_type}${r.state}${r.district}${r.special}`} className="board-row">
-            <Link className="board-hit" to={`/propose?q=${encodeURIComponent(boardLabel(r).replace(' — ', ' '))}`}>
+            <Link className="board-hit" to={`/open?q=${encodeURIComponent(boardLabel(r).replace(' — ', ' '))}`}>
               <span className="board-top"><span className="board-title">{boardLabel(r)}</span>
                 {r.polling?.rating && <span className="muted small">{r.polling.rating}</span>}</span>
               <MatchupBar r={r} />

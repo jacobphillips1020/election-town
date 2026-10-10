@@ -1,4 +1,4 @@
-// The race board: scan every polled 2026 race (who's running, who's ahead, how solid), tap to propose.
+// The race board: scan every polled 2026 race (who's running, who's ahead, how solid), then open its market.
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { boardKey, boardLabel, hasAverage, lastName, marginText, ratingTone, viewRaces, type BoardRace, type BoardView } from '../domain/board'
@@ -8,11 +8,10 @@ import { Err, PartyTag } from './common'
 
 const PAGE = 30
 
-export function RaceBoard({ races, adminName, onPropose, proposing, error, note, initialQuery = '' }: {
+export function RaceBoard({ races, onOpen, opening, error, note, initialQuery = '' }: {
   races: BoardRace[]
-  adminName: string
-  onPropose: (r: BoardRace) => void
-  proposing: string | null
+  onOpen: (r: BoardRace) => void
+  opening: string | null
   error: string
   note?: string
   initialQuery?: string
@@ -59,9 +58,9 @@ export function RaceBoard({ races, adminName, onPropose, proposing, error, note,
 
       <ul className="board-list">
         {rows.slice(0, shown).map((r) => (
-          <RaceRow key={boardKey(r)} r={r} open={open === boardKey(r)} adminName={adminName}
+          <RaceRow key={boardKey(r)} r={r} open={open === boardKey(r)}
             onToggle={() => setOpen(open === boardKey(r) ? null : boardKey(r))}
-            onPropose={() => onPropose(r)} busy={proposing === boardKey(r)} />
+            onOpen={() => onOpen(r)} busy={opening === boardKey(r)} />
         ))}
       </ul>
       {rows.length > shown && (
@@ -114,11 +113,12 @@ export function MatchupBar({ r }: { r: BoardRace }) {
   )
 }
 
-function RaceRow({ r, open, adminName, onToggle, onPropose, busy }: {
-  r: BoardRace; open: boolean; adminName: string; onToggle: () => void; onPropose: () => void; busy: boolean
+function RaceRow({ r, open, onToggle, onOpen, busy }: {
+  r: BoardRace; open: boolean; onToggle: () => void; onOpen: () => void; busy: boolean
 }) {
   const p = r.polling
   const avg = hasAverage(r)
+  const named = !!(p?.dem_name && p?.rep_name)
   const label = boardLabel(r)
   const id = `race-${boardKey(r).replace(/[^a-z0-9]/gi, '-')}`
   const summary = avg
@@ -130,7 +130,7 @@ function RaceRow({ r, open, adminName, onToggle, onPropose, busy }: {
         <span className="board-top">
           <span className="board-title">{label}</span>
           <span className="board-chips">
-            {r.market && <span className="rate rate-pool">In the pool</span>}
+            {r.market && <span className="rate rate-pool">Market open</span>}
             {p?.rating && <RatingChip rating={p.rating} />}
           </span>
         </span>
@@ -156,17 +156,21 @@ function RaceRow({ r, open, adminName, onToggle, onPropose, busy }: {
               <li><span>{p!.rep_name ?? 'Republican nominee (to be confirmed)'}</span><PartyTag party="R" /><span className="mu-num">{p!.rep_avg!.toFixed(1)}%</span></li>
             </ul>
           )}
-          <p className="small" style={{ margin: '0 0 6px' }}>
-            {avg ? `Top two by polling. ${adminName} adds anyone else on the ballot when approving.`
-              : `${adminName} will confirm the nominees before this race opens.`}
-          </p>
-          <p className="small muted" style={{ margin: '0 0 10px' }}>{basisSentence(r.state)} Entries cost the group buy-in; {adminName} sets it and the deadline.</p>
+          {r.market ? (
+            <p className="small" style={{ margin: '0 0 10px' }}>This race already has a market. Head over to place your bet.</p>
+          ) : named ? (
+            <p className="small" style={{ margin: '0 0 10px' }}>
+              Opens with the top two by polling plus &ldquo;Other candidates&rdquo;. {basisSentence(r.state)} You can change your pick until entries close.
+            </p>
+          ) : (
+            <p className="small" style={{ margin: '0 0 10px' }}>The candidates for this race haven&rsquo;t been published yet, so its market can&rsquo;t be opened.</p>
+          )}
           <div className="row">
             {r.market ? (
-              <Link className="btn" to={`/m/${r.market.id}`}>Open this market</Link>
-            ) : (
-              <button type="button" className="btn" disabled={busy} onClick={onPropose}>{busy ? 'Proposing…' : 'Propose this race'}</button>
-            )}
+              <Link className="btn" to={`/m/${r.market.id}`}>Place a bet</Link>
+            ) : named ? (
+              <button type="button" className="btn" disabled={busy} onClick={onOpen}>{busy ? 'Opening…' : 'Open market & place bet'}</button>
+            ) : null}
             <a className="btn ghost" href={p?.page ?? pollingPageUrl({ race_type: r.race_type, state: r.state, district: r.district, special: r.special })}
               target="_blank" rel="noreferrer">Polling page ↗</a>
           </div>

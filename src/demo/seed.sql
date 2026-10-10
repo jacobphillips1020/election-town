@@ -37,11 +37,6 @@ insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, 
    true, 'single_round', 'Demo fixture. Certified results from the (fictional) county canvass.', 1000,
    now() + interval '1 day', now() - interval '5 days', '{"race_type":"house","state":"TX","district":"07","special":false}');
 
-insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, candidates, has_other, outcome_basis, rules_note, polling_ref)
-values ('a0000000-0000-4000-8000-000000000004', 'senate', 'DEMO · Senate, Placeholder State', 'Placeholder State', 'proposed',
-        'd0000000-0000-4000-8000-000000000004',
-        '[{"id":"c1","name":"Sam Okafor","party":"I"},{"id":"c2","name":"Dana Reyes","party":"R"}]', true, 'single_round', '',
-        '{"race_type":"senate","state":"IA","district":null,"special":false}');
 
 do $$
 declare

@@ -13,6 +13,7 @@ import { PollingLink } from './RaceLink'
 export function MarketPage() {
   const { id } = useParams()
   const { backend } = useApp()
+  const isNew = new URLSearchParams(useLocation().search).get('new') === '1'
   const { data, error, loading, reload } = useRpc<MarketDetail>('get_market', { p_id: id })
   // Ask the server to refresh polling (it caches for 6 hours and is off unless enabled).
   useEffect(() => {
@@ -43,6 +44,11 @@ export function MarketPage() {
         )}
       </p>
       <div style={{ marginBottom: 8 }}><ShareButton path={`/m/${m.id}`} title={m.title} /></div>
+      {isNew && phase === 'open' && !data.my_entry && (
+        <p className="callout" role="status">
+          <strong>Market open.</strong> Now place your bet below. You can change it any time until entries close {formatET(m.entry_deadline)}.
+        </p>
+      )}
       <BasisBanner m={m} />
       <Err>{error}</Err>
 
@@ -476,11 +482,11 @@ function SeatForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Ent
 function EnterButton({ ready, busy, existing, price, onSubmit }: { ready: boolean; busy: boolean; existing: boolean; price: number; onSubmit: () => void }) {
   const { signedIn, isMember, signupPath } = useAccount()
   const loc = useLocation()
-  if (!signedIn) return <Link className="btn" to={signupPath(loc.pathname)}>Sign up to enter</Link>
+  if (!signedIn) return <Link className="btn" to={signupPath(loc.pathname)}>Sign up to place a bet</Link>
   if (!isMember) return <p className="callout warn">The group is invite-only right now. Ask the organizer for the invitation link to enter.</p>
   return (
     <button className="btn" disabled={!ready || busy} onClick={onSubmit}>
-      {existing ? 'Save changes' : `Enter for ${usd(price)}`}
+      {existing ? 'Save changes' : `Place bet · ${usd(price)}`}
     </button>
   )
 }

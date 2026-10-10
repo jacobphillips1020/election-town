@@ -11,10 +11,10 @@ export default function DevBoard() {
   const [msg, setMsg] = useState('')
   return (
     <main className="page" id="main">
-      <h1>Propose a race</h1>
+      <h1>Open a market</h1>
       <p className="muted" style={{ maxWidth: '36rem' }}>Pick a race to add to the pool. (Dev preview with a local sample; nothing is saved.)</p>
       {msg && <p className="ok">{msg}</p>}
-      <RaceBoard races={sample} adminName="Jake" onPropose={(r) => setMsg(`Would propose ${r.state} ${r.race_type}`)} proposing={null} error="" />
+      <RaceBoard races={sample} onOpen={(r) => setMsg(`Would open ${r.state} ${r.race_type}`)} opening={null} error="" />
     </main>
   )
 }

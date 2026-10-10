@@ -55,6 +55,17 @@ async function openRace(o: { kind?: string; buyIn?: number; deadline?: string; h
   })
   return mid
 }
+async function proposedMarket(kind: string, state: string, district: string | null, cands: unknown) {
+  return (await db.query<{ id: string }>(
+    `insert into public.markets (kind, title, jurisdiction, status, proposed_by, candidates, has_other, polling_ref)
+     values ($1, $2, $2, 'proposed', $3, $4, true, $5) returning id`,
+    [kind, `${state} ${kind}`, U.maya, JSON.stringify(cands), JSON.stringify({ race_type: kind, state, district, special: false })],
+  )).rows[0].id
+}
+const boardNames = (key: string, dem: string, rep: string) =>
+  db.query(`insert into public.race_polling (race_key, race_type, state, district, is_special, dem_name, rep_name, dem_avg, rep_avg, poll_count)
+            select $1, split_part($1, ':', 1), split_part($1, ':', 2), nullif(split_part($1, ':', 3), ''), split_part($1, ':', 4) = '1', $2, $3, 47, 45, 3`, [key, dem, rep])
+
 const pick = (who: string, mid: string, winner: string, c1: number, c2: number, other = 0) =>
   rpc(db, who, 'submit_entry', { p_market: mid, p_winner: winner, p_shares: { c1, c2, other } })
 const backdate = (mid: string) =>
@@ -89,7 +100,7 @@ describe('authorization', () => {
     expect(JSON.stringify(m)).not.toMatch(/Maya|Dev|"shares"/)
     expect((await rpc<unknown[]>(db, null, 'race_board')).length).toBe(506)
     await expect(rpc(db, null, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow(/permission denied/i)
-    await expect(rpc(db, null, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/permission denied/i)
+    await expect(rpc(db, null, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/permission denied/i)
     await expect(rpc(db, null, 'my_ledger')).rejects.toThrow(/permission denied/i)
   })
   test('a signed-in non-member can browse but cannot see picks or take part', async () => {
@@ -103,7 +114,7 @@ describe('authorization', () => {
     const m = await rpc<{ entries: unknown }>(db, U.sam, 'get_market', { p_id: mid })
     expect(m.entries).toBeNull()
     await expect(rpc(db, U.sam, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })).rejects.toThrow(/members only/i)
-    await expect(rpc(db, U.sam, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/members only/i)
+    await expect(rpc(db, U.sam, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/members only/i)
     const me = await rpc<{ is_member: boolean; group: unknown; open_signup: boolean }>(db, U.sam, 'get_me')
     expect([me.is_member, me.group, me.open_signup]).toEqual([false, null, false])
   })
@@ -252,7 +263,7 @@ describe('closing boundary and locked terms', () => {
   })
 
   test('deadlines must be in the future and before Election Day; defaults are admin-only and lock', async () => {
-    const mid = await rpc<string>(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'tx', p_district: '1' })
+    const mid = await proposedMarket('house', 'TX', '01', [{ id: 'c1', name: 'A', party: 'D' }, { id: 'c2', name: 'B', party: 'R' }])
     const base = { p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'x', p_buy_in_cents: 1000 }
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
@@ -305,7 +316,7 @@ describe('entry validation', () => {
   })
 
   test('only one live Control of Congress market, and congress cannot be proposed', async () => {
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'congress', p_state: 'OH' })).rejects.toThrow(/Senate, House, or governor/i)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'congress', p_state: 'OH' })).rejects.toThrow(/Senate, House, or governor/i)
     await expect(db.exec(`insert into public.markets (kind, title) values ('congress', 'Dup')`)).rejects.toThrow(/one_live_congress_market|duplicate/i)
   })
 })
@@ -525,21 +536,26 @@ describe('contact numbers and polling link', () => {
   })
 })
 
-describe('race proposals are system-defined', () => {
-  test('a proposal carries only the race; the system fills in everything else', async () => {
-    const mid = await rpc<string>(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'az', p_district: '1' })
+describe('launching a market', () => {
+  test('one step: the market opens immediately on the group defaults, with candidates from the data', async () => {
+    await boardNames('house:AZ:01:0', 'Pat Example', 'Lee Sample')
+    const mid = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'az', p_district: '1' })
     const m = (await rpc<Record<string, any>[]>(db, U.dev, 'list_markets')).find((x) => x.id === mid)!
     expect(m).toMatchObject({
-      title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'proposed', outcome_basis: 'single_round', has_other: true,
-      polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
+      title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'open', outcome_basis: 'single_round', has_other: true,
+      buy_in_cents: 1000, polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
     })
-    expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Democratic nominee (to be confirmed)', 'Republican nominee (to be confirmed)'])
+    expect(new Date(m.entry_deadline).toISOString()).toBe('2026-11-03T01:00:00.000Z')
+    expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
     expect(m.rules_note).toMatch(/certified results from Arizona/)
+    // the launcher can bet straight away
+    await rpc(db, U.maya, 'submit_entry', { p_market: mid, p_winner: 'c1', p_shares: { c1: 520, c2: 480, other: 0 } })
   })
 
   test('the outcome basis follows the state\'s election rules', async () => {
     const basis = async (state: string) => {
-      const id = await rpc<string>(db, U.maya, 'propose_race', { p_race_type: 'governor', p_state: state })
+      await boardNames(`governor:${state}::0`, `${state} Dem`, `${state} Rep`)
+      const id = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'governor', p_state: state })
       return (await rpc<{ id: string; outcome_basis: string }[]>(db, U.maya, 'list_markets')).find((x) => x.id === id)!.outcome_basis
     }
     expect(await basis('AK')).toBe('rcv_final')
@@ -548,21 +564,24 @@ describe('race proposals are system-defined', () => {
     expect(await basis('OH')).toBe('single_round')
   })
 
-  test('only races that are on the 2026 ballot can be proposed, once each', async () => {
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'senate', p_state: 'UT' })).rejects.toThrow(/not on the 2026 ballot/i)
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'governor', p_state: 'UT' })).rejects.toThrow(/not on the 2026 ballot/i)
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '5' })).rejects.toThrow(/not on the 2026 ballot/i)
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'UT' })).rejects.toThrow()
-    await rpc(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '02' })
-    await expect(rpc(db, U.dev, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/already has a market/i)
-    // Ohio's only 2026 Senate race is the special election
-    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'senate', p_state: 'OH' })).rejects.toThrow(/not on the 2026 ballot/i)
-    await rpc(db, U.maya, 'propose_race', { p_race_type: 'senate', p_state: 'OH', p_special: true })
+  test('only real 2026 races with published candidates, once each', async () => {
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'UT' })).rejects.toThrow(/not on the 2026 ballot/i)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '5' })).rejects.toThrow(/not on the 2026 ballot/i)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/haven't been published/i)
+    await boardNames('house:UT:02:0', 'Pat Example', 'Lee Sample')
+    await rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '02' })
+    await expect(rpc(db, U.dev, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '2' })).rejects.toThrow(/already has a market/i)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'OH' })).rejects.toThrow(/not on the 2026 ballot/i)
+    await boardNames('senate:OH::1', 'Pat Example', 'Lee Sample')
+    await rpc(db, U.maya, 'launch_race', { p_race_type: 'senate', p_state: 'OH', p_special: true })
   })
 
-  test('free-form proposals no longer exist, and non-members cannot propose', async () => {
+  test('no launching after the election\'s entries have closed; proposals and free-form markets are gone', async () => {
+    await boardNames('house:UT:01:0', 'A', 'B')
+    await db.exec(`update public.group_settings set default_deadline = now() - interval '1 minute'`)
+    await expect(rpc(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/closed/i)
+    await expect(rpc(db, U.maya, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow()
     await expect(rpc(db, U.maya, 'propose_market', { p_kind: 'senate', p_title: 'x', p_jurisdiction: '', p_candidates: [] })).rejects.toThrow()
-    await expect(rpc(db, U.sam, 'propose_race', { p_race_type: 'house', p_state: 'UT', p_district: '1' })).rejects.toThrow(/members only/i)
   })
 
   test('the catalog in the database matches the one the app searches', async () => {
@@ -574,7 +593,7 @@ describe('race proposals are system-defined', () => {
 
 describe('candidate placeholders', () => {
   test('a race with "to be confirmed" candidates cannot be opened until names are real', async () => {
-    const mid = await rpc<string>(db, U.maya, 'propose_race', { p_race_type: 'senate', p_state: 'IA' })
+    const mid = await proposedMarket('senate', 'IA', null, [{ id: 'c1', name: 'Democratic nominee (to be confirmed)', party: 'D' }, { id: 'c2', name: 'Republican nominee (to be confirmed)', party: 'R' }])
     const approve = (c: unknown) => rpc(db, U.jake, 'approve_market', {
       p_id: mid, p_candidates: c, p_has_other: true, p_basis: 'single_round', p_rules_note: 'Certified canvass.',
       p_buy_in_cents: 1000, p_deadline: inOneHour(),

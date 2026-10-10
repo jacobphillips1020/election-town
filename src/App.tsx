@@ -7,7 +7,7 @@ import { JoinPage } from './ui/Join'
 import { Loading } from './ui/common'
 import { MarketsPage } from './ui/Markets'
 import { MarketPage } from './ui/MarketDetail'
-import { ProposePage } from './ui/Propose'
+import { OpenMarketPage } from './ui/OpenMarket'
 import { MyEntriesPage } from './ui/MyEntries'
 import { Masthead, NinetiesFooter } from './ui/FlagBanner'
 import { AdminPage } from './ui/Admin'
@@ -112,7 +112,8 @@ function Shell() {
           {DevBoard && <Route path="/dev/board" element={<Suspense fallback={null}><DevBoard /></Suspense>} />}
           <Route path="/" element={<MarketsPage />} />
           <Route path="/m/:id" element={<MarketPage />} />
-          <Route path="/propose" element={<ProposePage />} />
+          <Route path="/open" element={<OpenMarketPage />} />
+          <Route path="/propose" element={<Navigate to="/open" replace />} />
           <Route path="/entries" element={<Members><MyEntriesPage /></Members>} />
           <Route path="/admin" element={<Members><AdminPage /></Members>} />
           <Route path="*" element={<Navigate to="/" replace />} />

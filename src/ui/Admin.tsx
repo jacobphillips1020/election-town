@@ -31,19 +31,18 @@ function useAction() {
 const dollarsToCents = (s: string): number | null => (/^\d+(\.\d{1,2})?$/.test(s.trim()) ? Math.round(parseFloat(s) * 100) : null)
 const centsToDollars = (c: number) => (c / 100).toFixed(2).replace(/\.00$/, '')
 
-type TabId = 'proposals' | 'markets' | 'results' | 'ledger' | 'group'
+type TabId = 'markets' | 'results' | 'ledger' | 'group'
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'proposals', label: 'Proposals' }, { id: 'markets', label: 'Markets' },
+  { id: 'markets', label: 'Markets' },
   { id: 'results', label: 'Results' }, { id: 'ledger', label: 'Ledger' }, { id: 'group', label: 'Group' },
 ]
 
 export function AdminPage() {
   const { me } = useApp()
-  const [tab, setTab] = useState<TabId>('proposals')
+  const [tab, setTab] = useState<TabId>('markets')
   const list = useRpc<Market[]>('list_markets')
   if (!me?.is_admin) return <main className="page" id="main"><h1>Admin</h1><p>Admin only.</p></main>
   const markets = list.data ?? []
-  const waiting = markets.filter((m) => m.phase === 'proposed').length
   const results = markets.filter((m) => m.phase === 'closed').length
   return (
     <main className="page" id="main">
@@ -51,14 +50,13 @@ export function AdminPage() {
       <div className="tabs" role="tablist">
         {TABS.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
-            {t.label}{t.id === 'proposals' && waiting > 0 ? ` (${waiting})` : ''}{t.id === 'results' && results > 0 ? ` (${results})` : ''}
+            {t.label}{t.id === 'results' && results > 0 ? ` (${results})` : ''}
           </button>
         ))}
       </div>
       <Err>{list.error}</Err>
       {list.loading && !list.data ? <Loading /> : (
         <>
-          {tab === 'proposals' && <Proposals markets={markets.filter((m) => m.phase === 'proposed')} reload={list.reload} />}
           {tab === 'markets' && <OpenMarkets markets={markets.filter((m) => m.phase === 'open')} reload={list.reload} />}
           {tab === 'results' && <Results markets={markets.filter((m) => m.phase === 'closed' || m.phase === 'settled')} reload={list.reload} />}
           {tab === 'ledger' && <LedgerTab />}
@@ -142,29 +140,6 @@ function ApproveForm({ m, onDone, label }: { m: Market; onDone: () => void; labe
         })}>{label}</button>
       </div>
     </div>
-  )
-}
-
-function Proposals({ markets, reload }: { markets: Market[]; reload: () => void }) {
-  const { backend } = useApp()
-  const a = useAction()
-  if (markets.length === 0) return <p className="muted">No proposals waiting.</p>
-  return (
-    <>
-      <Err>{a.error}</Err>
-      {markets.map((m) => (
-        <section key={m.id} className="section">
-          <h2><Link to={`/m/${m.id}`}>{m.title}</Link></h2>
-          <p className="muted small">Proposed by {m.proposed_by_name ?? 'a member'} · {m.kind} · {m.jurisdiction}</p>
-          <ApproveForm m={m} onDone={reload} label="Approve and open for entries" />
-          <button className="btn ghost small" disabled={a.busy} onClick={() => {
-            const reason = prompt('Reason for rejecting (optional)') ?? null
-            if (reason === null) return
-            a.run(async () => { await backend.rpc('reject_market', { p_id: m.id, p_reason: reason }); reload() })
-          }}>Reject proposal</button>
-        </section>
-      ))}
-    </>
   )
 }
 

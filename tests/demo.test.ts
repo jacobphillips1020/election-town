@@ -18,7 +18,6 @@ test('demo seed loads and keeps sealed picks sealed', async () => {
   expect(byTitle('Fictional State').phase).toBe('open')
   expect(byTitle('Example State').phase).toBe('closed')
   expect(byTitle('Sample District').phase).toBe('settled')
-  expect(byTitle('Placeholder').phase).toBe('proposed')
 
   // Open market: Priya (no entry) sees counts only.
   const open = byTitle('Fictional State')

@@ -61,7 +61,7 @@ export function searchRaces(query: string, limit = 12): RaceEntry[] {
   return RACES.filter((r) => matchesQuery(r, query)).slice(0, limit)
 }
 
-/** Mirrors propose_race(): states whose general election can be decided in a later round. */
+/** Mirrors launch_race(): states whose general election can be decided in a later round. */
 export function outcomeBasis(state: string): 'single_round' | 'runoff_final' | 'rcv_final' {
   return state === 'AK' || state === 'ME' ? 'rcv_final' : state === 'GA' ? 'runoff_final' : 'single_round'
 }
