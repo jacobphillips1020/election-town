@@ -35,13 +35,14 @@ sign-in. To connect a real Supabase project, copy `.env.example` to `.env.local`
   service-role key or dashboard access) can read the tables directly. Treat the project login and the service-role key
   as the keys to everyone's sealed picks, and never put the service-role key in `VITE_*` variables or the repo.
 - Realtime is intentionally not used; the migration also removes tables from the realtime publication.
-- Members see display names, never email addresses (profiles hold no email).
+- Members see display names only. Email lives in Supabase Auth; phone numbers are in `member_contacts`, readable only by the owner of the number and the admin.
+- The admin can see who has entered an open market (to chase payments) but not what they picked.
 
 ## Going live (summary)
 
 1. Create a Supabase project; apply the migrations in order (`supabase db push` or the SQL editor).
-2. Set up custom SMTP (Supabase's built-in email only reaches your own team, 2/hour).
-3. Add redirect URLs (`http://localhost:5173/**`, your deployed URL `/**`) under Authentication → URL Configuration.
+2. In Supabase: Authentication → Sign In / Providers → Email → turn **Confirm email** off (the app never sends email).
+3. Add `http://localhost:5173` and your deployed URL under Authentication → URL Configuration.
 4. Sign up in the app, then run `supabase/seed/bootstrap_admin.sql` once (your email) to become admin.
 5. Put `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local` (and later Vercel).
 6. Create an invitation link in Admin → Group and share it.

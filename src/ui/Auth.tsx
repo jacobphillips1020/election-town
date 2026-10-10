@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, type FormEvent } from 'react'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../data/context'
 import { safeNext } from '../lib'
 import { Err } from './common'
@@ -9,6 +9,7 @@ export function AuthPage() {
   const [params] = useSearchParams()
   const next = safeNext(params.get('next'))
   const [mode, setMode] = useState<'in' | 'up' | 'forgot'>('in')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -48,11 +49,9 @@ export function AuthPage() {
       if (mode === 'in') await backend.signIn(email.trim(), password)
       else if (mode === 'up') {
         if (!name.trim()) throw new Error('Enter the name your friends will see.')
-        const r = await backend.signUp(email.trim(), password, name.trim(), next)
-        if (r.needsVerification) setInfo('Check your email and open the verification link to finish signing up.')
-      } else {
-        await backend.sendReset(email.trim())
-        setInfo('If that email has an account, a reset link is on its way.')
+        if (phone.replace(/\D/g, '').length < 10) throw new Error('Enter a phone number with area code.')
+        const r = await backend.signUp(email.trim(), password, name.trim(), phone.trim())
+        if (r.needsVerification) setInfo('Your account was created, but email confirmation is still switched on for this project. Ask the organizer to turn it off.')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -63,20 +62,33 @@ export function AuthPage() {
 
   return (
     <main className="page" id="main" style={{ maxWidth: '28rem' }}>
-      <h1>{mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create your account' : 'Reset your password'}</h1>
+      <h1>{mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create your account' : 'Forgot your password?'}</h1>
+      {mode === 'forgot' ? (
+        <p>
+          Election Town doesn&rsquo;t send emails. Text the person who invited you and ask them to reset your password;
+          they&rsquo;ll send you a temporary one.
+        </p>
+      ) : (
       <form onSubmit={submit} noValidate>
         {mode === 'up' && (
           <div className="field">
             <label htmlFor="name">Display name</label>
             <input id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="nickname" maxLength={40} required />
-            <p className="hint">Shown to the group. Your email is never shown.</p>
+            <p className="hint">Shown to the group. Your email and phone are never shown to other members.</p>
+          </div>
+        )}
+        {mode === 'up' && (
+          <div className="field">
+            <label htmlFor="phone">Mobile phone</label>
+            <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="(312) 555-0123" required />
+            <p className="hint">Only the organizer sees this. It&rsquo;s how they reach you about payments and deadlines.</p>
           </div>
         )}
         <div className="field">
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">{mode === 'up' ? 'Email (just your login name; we never email it)' : 'Email'}</label>
           <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
         </div>
-        {mode !== 'forgot' && (
+        {(
           <div className="field">
             <label htmlFor="pw">Password</label>
             <input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8}
@@ -87,9 +99,10 @@ export function AuthPage() {
         <Err>{error}</Err>
         {info && <p className="ok" role="status">{info}</p>}
         <button className="btn" disabled={busy}>
-          {mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Send reset link'}
+          {mode === 'in' ? 'Sign in' : 'Create account'}
         </button>
       </form>
+      )}
       <p className="small" style={{ marginTop: 16 }}>
         {mode !== 'in' && <button className="btn ghost small" onClick={() => setMode('in')}>Back to sign in</button>}{' '}
         {mode === 'in' && (
@@ -99,66 +112,6 @@ export function AuthPage() {
           </>
         )}
       </p>
-    </main>
-  )
-}
-
-/** Landing page for email-verification links. The Supabase client exchanges the code automatically. */
-export function CallbackPage() {
-  const { uid } = useApp()
-  const [params] = useSearchParams()
-  const nav = useNavigate()
-  const [slow, setSlow] = useState(false)
-  useEffect(() => {
-    if (uid) nav(safeNext(params.get('next')), { replace: true })
-  }, [uid, nav, params])
-  useEffect(() => {
-    const t = setTimeout(() => setSlow(true), 6000)
-    return () => clearTimeout(t)
-  }, [])
-  return (
-    <main className="page" id="main">
-      <p>Signing you in…</p>
-      {slow && (
-        <p className="muted">
-          That is taking a while. <Link to="/auth">Go to sign in</Link>.
-        </p>
-      )}
-    </main>
-  )
-}
-
-export function ResetPage() {
-  const { backend, uid } = useApp()
-  const nav = useNavigate()
-  const [pw, setPw] = useState('')
-  const [error, setError] = useState('')
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    try {
-      await backend.setPassword(pw)
-      nav('/', { replace: true })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not set the password.')
-    }
-  }
-  if (!uid)
-    return (
-      <main className="page" id="main">
-        <p>Open the reset link from your email to choose a new password.</p>
-      </main>
-    )
-  return (
-    <main className="page" id="main" style={{ maxWidth: '28rem' }}>
-      <h1>Choose a new password</h1>
-      <form onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="npw">New password</label>
-          <input id="npw" type="password" value={pw} minLength={8} autoComplete="new-password" onChange={(e) => setPw(e.target.value)} required />
-        </div>
-        <Err>{error}</Err>
-        <button className="btn">Save password</button>
-      </form>
     </main>
   )
 }

@@ -255,6 +255,7 @@ language sql volatile security definer set search_path = '' as $$
     'is_member', app.is_member(),
     'is_admin', app.is_admin(),
     'display_name', (select display_name from public.profiles where user_id = auth.uid()),
+    'has_phone', exists (select 1 from public.member_contacts where user_id = auth.uid()),
     'group', case when app.is_member() then
        (select to_jsonb(g) || jsonb_build_object('admin_name',
           (select p.display_name from public.admins a join public.profiles p on p.user_id = a.user_id limit 1))
@@ -354,21 +355,52 @@ begin
   return o;
 end $$;
 
+-- Every race market is tied to one polling-average race: type + state (+ district for the House).
+-- This structured reference is how the app looks the race up against the polling source.
+create function app.normalize_polling_ref(p_kind text, p_ref jsonb) returns jsonb
+language plpgsql immutable as $$
+declare st text; d text;
+begin
+  if p_kind not in ('senate', 'house', 'governor') then return null; end if;
+  if p_ref is null or jsonb_typeof(p_ref) <> 'object' then
+    raise exception 'Choose the state (and district) so this race can be matched to its polling average';
+  end if;
+  st := upper(btrim(coalesce(p_ref ->> 'state', '')));
+  if not (st = any (array[
+    'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA',
+    'MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN',
+    'TX','UT','VT','VA','WA','WV','WI','WY'])) then
+    raise exception 'Unknown state code';
+  end if;
+  if p_kind = 'house' then
+    d := upper(btrim(coalesce(p_ref ->> 'district', '')));
+    if d !~ '^(AL|[0-9]{1,2})$' then raise exception 'House races need a district number (or AL for at-large)'; end if;
+    if d <> 'AL' then
+      if d::int not between 1 and 53 then raise exception 'District must be between 1 and 53'; end if;
+      d := lpad(d::int::text, 2, '0');
+    end if;
+  end if;
+  return jsonb_build_object('race_type', p_kind, 'state', st, 'district', d,
+                            'special', coalesce((p_ref ->> 'special')::boolean, false));
+end $$;
+
 create function public.propose_market(p_kind text, p_title text, p_jurisdiction text, p_candidates jsonb,
                                       p_has_other boolean default true, p_basis text default 'single_round',
                                       p_note text default '', p_polling_ref jsonb default null)
 returns uuid language plpgsql security definer set search_path = '' as $$
-declare v uuid;
+declare v uuid; v_ref jsonb;
 begin
   perform app.require_member();
   if p_kind not in ('senate', 'house', 'governor') then
     raise exception 'Propose a Senate, House, or governor race';
   end if;
+  v_ref := app.normalize_polling_ref(p_kind, p_polling_ref);
   insert into public.markets (kind, title, jurisdiction, status, proposed_by, candidates, has_other,
                               outcome_basis, rules_note, polling_ref)
-  values (p_kind, p_title, coalesce(p_jurisdiction, ''), 'proposed', auth.uid(),
-          app.normalize_candidates(p_candidates), coalesce(p_has_other, true),
-          p_basis, coalesce(p_note, ''), p_polling_ref)
+  values (p_kind, p_title,
+          coalesce(nullif(btrim(p_jurisdiction), ''), v_ref ->> 'state' || coalesce('-' || (v_ref ->> 'district'), '')),
+          'proposed', auth.uid(), app.normalize_candidates(p_candidates), coalesce(p_has_other, true),
+          p_basis, coalesce(p_note, ''), v_ref)
   returning id into v;
   return v;
 end $$;
@@ -393,12 +425,15 @@ begin
     raise exception 'Describe the outcome definition and result source';
   end if;
   if p_basis not in ('single_round', 'runoff_final', 'rcv_final') then raise exception 'Unknown outcome basis'; end if;
+  if m.kind <> 'congress' and p_polling_ref is null and m.polling_ref is null then
+    raise exception 'This race has no polling-source link. Set the state (and district) first';
+  end if;
   update public.markets set
     candidates = case when kind = 'congress' then '[]'::jsonb else app.normalize_candidates(p_candidates) end,
     has_other = case when kind = 'congress' then false else coalesce(p_has_other, true) end,
     outcome_basis = p_basis, rules_note = btrim(p_rules_note),
     buy_in_cents = p_buy_in_cents, entry_deadline = p_deadline,
-    polling_ref = coalesce(p_polling_ref, polling_ref),
+    polling_ref = case when p_polling_ref is not null then app.normalize_polling_ref(kind, p_polling_ref) else polling_ref end,
     status = 'open', approved_at = coalesce(approved_at, clock_timestamp())
   where id = p_id;
 end $$;
@@ -594,17 +629,25 @@ begin
         from public.money_transfers t where t.member_id = v_me and t.voided_at is null));
 end $$;
 
--- Per-person balances. Pre-close commitments are deliberately omitted: who has entered
--- a market stays hidden from the admin too until entries close.
+-- Per-person balances plus who has entered each open market. The admin can see WHO has
+-- entered (to chase payments and nudge people), never WHAT they picked: picks stay sealed
+-- from everyone, including the admin, until the market closes.
 create function public.admin_ledger() returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 begin
   perform app.require_admin();
   perform app.sweep_underfilled();
   return jsonb_build_object(
+    'open_entrants', (select coalesce(jsonb_agg(jsonb_build_object(
+          'market_id', m.id, 'title', m.title, 'entry_deadline', m.entry_deadline,
+          'names', (select jsonb_agg(p.display_name order by p.display_name)
+                    from public.entries e join public.profiles p on p.user_id = e.user_id where e.market_id = m.id))
+          order by m.entry_deadline), '[]'::jsonb)
+        from public.markets m
+        where m.status = 'open' and exists (select 1 from public.entries e where e.market_id = m.id)),
     'people', coalesce((select jsonb_agg(to_jsonb(r) || jsonb_build_object(
           'is_admin', exists (select 1 from public.admins a where a.user_id = r.user_id)) order by r.display_name)
-        from app.ledger_rows(null, true) r), '[]'::jsonb),
+        from app.ledger_rows(null, false) r), '[]'::jsonb),
     'breakdown', (select coalesce(jsonb_agg(jsonb_build_object(
           'user_id', py.user_id, 'market_id', m.id, 'title', m.title, 'outcome', r.outcome,
           'commitment_cents', py.commitment_cents, 'gross_cents', py.gross_cents, 'refund_cents', py.refund_cents,
@@ -612,8 +655,7 @@ begin
         from public.payouts py
         join public.settlement_runs r on r.id = py.run_id
         join public.markets m on m.id = py.market_id
-        where app.deadline_passed_at(m.entry_deadline, clock_timestamp())
-          and r.version = (select max(r2.version) from public.settlement_runs r2 where r2.market_id = r.market_id)),
+        where r.version = (select max(r2.version) from public.settlement_runs r2 where r2.market_id = r.market_id)),
     'transfers', (select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'member_id', t.member_id,
           'display_name', p.display_name, 'direction', t.direction, 'amount_cents', t.amount_cents,
           'occurred_on', t.occurred_on, 'note', t.note, 'voided_at', t.voided_at) order by t.occurred_on desc, t.recorded_at desc), '[]'::jsonb)
@@ -660,3 +702,34 @@ select 'congress', 'Control of Congress', 'United States', 'open', '[]'::jsonb, 
        || 'basis is never changed. Score = half the sum of absolute differences across the six seat counts.',
        default_buy_in_cents, default_deadline, now()
 from public.group_settings;
+
+-- ---------------------------------------------------------------- contact numbers
+
+create function public.set_my_phone(p_phone text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare v text := app.normalize_phone(p_phone);
+begin
+  if auth.uid() is null then raise exception 'Sign in required' using errcode = '28000'; end if;
+  if v is null then raise exception 'Enter a phone number with area code, like (312) 555-0123'; end if;
+  begin
+    insert into public.member_contacts (user_id, phone) values (auth.uid(), v)
+    on conflict (user_id) do update set phone = excluded.phone;
+  exception when unique_violation then
+    raise exception 'That number is already on another account';
+  end;
+end $$;
+
+-- Admin-only roster with contact numbers (members can never read each other's numbers).
+create function public.admin_members() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform app.require_admin();
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'user_id', m.user_id, 'display_name', p.display_name, 'phone', c.phone,
+             'joined_at', m.joined_at, 'is_admin', exists (select 1 from public.admins a where a.user_id = m.user_id))
+           order by p.display_name)
+    from public.members m
+    join public.profiles p on p.user_id = m.user_id
+    left join public.member_contacts c on c.user_id = m.user_id), '[]'::jsonb);
+end $$;

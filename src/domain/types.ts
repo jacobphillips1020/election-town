@@ -17,7 +17,7 @@ export type Market = {
   rules_note: string
   buy_in_cents: number | null
   entry_deadline: string | null
-  polling_ref: unknown
+  polling_ref: { race_type: 'senate' | 'house' | 'governor'; state: string; district: string | null; special: boolean } | null
   entrants: number
   pool_cents: number
   has_entry: boolean
@@ -87,5 +87,6 @@ export type Me = {
   is_member: boolean
   is_admin: boolean
   display_name: string | null
+  has_phone: boolean
   group: { name: string; default_buy_in_cents: number; default_deadline: string; admin_name: string | null } | null
 }

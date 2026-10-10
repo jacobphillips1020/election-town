@@ -38,14 +38,12 @@ export function createLiveBackend(url: string, anonKey: string): Backend {
       const { error } = await sb.auth.signInWithPassword({ email, password })
       fail(error)
     },
-    async signUp(email, password, displayName, next) {
+    async signUp(email, password, displayName, phone) {
+      // "Confirm email" is turned OFF in Supabase, so no email is ever sent; the phone number is the contact.
       const { data, error } = await sb.auth.signUp({
         email,
         password,
-        options: {
-          data: { display_name: displayName },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        },
+        options: { data: { display_name: displayName, phone } },
       })
       fail(error)
       return { needsVerification: !data.session }
@@ -53,13 +51,8 @@ export function createLiveBackend(url: string, anonKey: string): Backend {
     async signOut() {
       await sb.auth.signOut()
     },
-    async sendReset(email) {
-      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/reset` })
-      fail(error)
-    },
-    async setPassword(password) {
-      const { error } = await sb.auth.updateUser({ password })
-      fail(error)
+    async accessToken() {
+      return (await sb.auth.getSession()).data.session?.access_token ?? null
     },
   }
 }

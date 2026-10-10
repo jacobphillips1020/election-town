@@ -14,7 +14,7 @@ grant usage on schema app to authenticated;
 -- Row-filtered reads (policies in 0001). RPCs below are the normal path.
 grant select on public.group_settings, public.admins, public.members, public.profiles,
                 public.markets, public.entries, public.settlement_runs, public.payouts,
-                public.money_transfers, public.polling_snapshots, public.invites
+                public.money_transfers, public.polling_snapshots, public.invites, public.member_contacts
   to authenticated;
 
 -- RPC surface.
@@ -29,7 +29,7 @@ grant execute on function
   public.record_polling(uuid, text, text, date, jsonb),
   public.enter_result(uuid, text, int, jsonb, text), public.preview_settlement(uuid),
   public.confirm_settlement(uuid), public.correct_settlement(uuid, int, text, int, jsonb, text, text),
-  public.my_ledger(), public.admin_ledger(),
+  public.my_ledger(), public.admin_ledger(), public.set_my_phone(text), public.admin_members(),
   public.record_transfer(uuid, text, int, date, text), public.void_transfer(uuid)
   to authenticated;
 

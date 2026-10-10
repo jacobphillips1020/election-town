@@ -10,31 +10,36 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('d0000000-0000-4000-8000-000000000006', 'sam@demo.invalid',   '{"display_name":"Sam"}');
 
 insert into public.admins (user_id) values ('d0000000-0000-4000-8000-000000000001');
+insert into public.member_contacts (user_id, phone) values
+  ('d0000000-0000-4000-8000-000000000001', '+13125550100'), ('d0000000-0000-4000-8000-000000000002', '+13125550101'),
+  ('d0000000-0000-4000-8000-000000000003', '+13125550102'), ('d0000000-0000-4000-8000-000000000004', '+13125550103'),
+  ('d0000000-0000-4000-8000-000000000005', '+13125550104'), ('d0000000-0000-4000-8000-000000000006', '+13125550105');
 insert into public.members (user_id)
   select id from auth.users where id <> 'd0000000-0000-4000-8000-000000000006';
 
 insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, candidates, has_other,
-                            outcome_basis, rules_note, buy_in_cents, entry_deadline, approved_at) values
+                            outcome_basis, rules_note, buy_in_cents, entry_deadline, approved_at, polling_ref) values
   ('a0000000-0000-4000-8000-000000000001', 'senate', 'DEMO · Senate, Fictional State', 'Fictional State', 'open',
    'd0000000-0000-4000-8000-000000000002',
    '[{"id":"c1","name":"Elena Garcia","party":"D"},{"id":"c2","name":"Tom Whitfield","party":"R"},{"id":"c3","name":"Ana Lee","party":"L"}]',
    true, 'single_round', 'Demo fixture. Certified results from the (fictional) state canvass.', 1000,
-   now() + interval '4 days', now() - interval '2 days'),
+   now() + interval '4 days', now() - interval '2 days', '{"race_type":"senate","state":"OH","district":null,"special":false}'),
   ('a0000000-0000-4000-8000-000000000002', 'governor', 'DEMO · Governor, Example State', 'Example State', 'open',
    'd0000000-0000-4000-8000-000000000003',
    '[{"id":"c1","name":"Rosa Delgado","party":"D"},{"id":"c2","name":"Mark Hale","party":"R"}]',
    true, 'single_round', 'Demo fixture. Certified results from the (fictional) state canvass.', 1000,
-   now() + interval '1 day', now() - interval '3 days'),
+   now() + interval '1 day', now() - interval '3 days', '{"race_type":"governor","state":"AZ","district":null,"special":false}'),
   ('a0000000-0000-4000-8000-000000000003', 'house', 'DEMO · House, Sample District 7', 'Sample District 7', 'open',
    'd0000000-0000-4000-8000-000000000004',
    '[{"id":"c1","name":"Jordan Ellis","party":"R"},{"id":"c2","name":"Priya Nair","party":"D"}]',
    true, 'single_round', 'Demo fixture. Certified results from the (fictional) county canvass.', 1000,
-   now() + interval '1 day', now() - interval '5 days');
+   now() + interval '1 day', now() - interval '5 days', '{"race_type":"house","state":"TX","district":"07","special":false}');
 
-insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, candidates, has_other, outcome_basis, rules_note)
+insert into public.markets (id, kind, title, jurisdiction, status, proposed_by, candidates, has_other, outcome_basis, rules_note, polling_ref)
 values ('a0000000-0000-4000-8000-000000000004', 'senate', 'DEMO · Senate, Placeholder State', 'Placeholder State', 'proposed',
         'd0000000-0000-4000-8000-000000000004',
-        '[{"id":"c1","name":"Sam Okafor","party":"I"},{"id":"c2","name":"Dana Reyes","party":"R"}]', true, 'single_round', '');
+        '[{"id":"c1","name":"Sam Okafor","party":"I"},{"id":"c2","name":"Dana Reyes","party":"R"}]', true, 'single_round', '',
+        '{"race_type":"senate","state":"IA","district":null,"special":false}');
 
 do $$
 declare

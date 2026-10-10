@@ -34,7 +34,7 @@ const inOneHour = () => new Date(Date.now() + 3600e3).toISOString()
 async function openRace(o: { kind?: string; buyIn?: number; deadline?: string; hasOther?: boolean; proposer?: string } = {}) {
   const mid = await rpc<string>(db, o.proposer ?? U.maya, 'propose_market', {
     p_kind: o.kind ?? 'senate', p_title: 'Testland Senate', p_jurisdiction: 'Testland',
-    p_candidates: CANDS, p_has_other: o.hasOther ?? true,
+    p_candidates: CANDS, p_has_other: o.hasOther ?? true, p_polling_ref: { state: 'OH' },
   })
   await rpc(db, U.jake, 'approve_market', {
     p_id: mid, p_candidates: CANDS, p_has_other: o.hasOther ?? true, p_basis: 'single_round',
@@ -145,16 +145,19 @@ describe('sealed picks', () => {
     expect(own.my_entry.winner_id).toBe('c1')
   })
 
-  test('admin ledger does not reveal who has entered before close', async () => {
+  test('admin can see WHO has entered an open market, but never what they picked', async () => {
     const mid = await openRace()
     await pick(U.maya, mid, 'c1', 520, 480)
     await pick(U.dev, mid, 'c2', 400, 600)
-    const led = await rpc<{ people: { display_name: string }[]; breakdown: unknown[] }>(db, U.jake, 'admin_ledger')
-    expect(led.people).toEqual([])
-    expect(led.breakdown).toEqual([])
-    await backdate(mid)
-    const after = await rpc<{ people: { display_name: string; unresolved_cents: number }[] }>(db, U.jake, 'admin_ledger')
-    expect(after.people.map((p) => [p.display_name, p.unresolved_cents])).toEqual([['Dev', 1000], ['Maya', 1000]])
+    const led = await rpc<{ people: { display_name: string; unresolved_cents: number }[]; open_entrants: { names: string[] }[] }>(db, U.jake, 'admin_ledger')
+    expect(led.open_entrants[0].names).toEqual(['Dev', 'Maya'])
+    expect(led.people.map((p) => [p.display_name, p.unresolved_cents])).toEqual([['Dev', 1000], ['Maya', 1000]])
+    expect(JSON.stringify(led)).not.toMatch(/winner_id|shares|"c1"|"c2"/)
+    expect(await select(db, U.jake, 'select * from public.entries')).toHaveLength(0)
+    const m = await rpc<{ entries: unknown; my_entry: unknown }>(db, U.jake, 'get_market', { p_id: mid })
+    expect([m.entries, m.my_entry]).toEqual([null, null])
+    // other members still cannot see who has entered
+    expect(await select(db, U.priya, 'select user_id from public.entries')).toHaveLength(0)
   })
 
   test('after close all members see everyone\'s picks and names; non-members still nothing', async () => {
@@ -176,8 +179,8 @@ describe('sealed picks', () => {
     expect(await select(db, U.priya, 'select * from public.payouts')).toHaveLength(0)
     expect(await select(db, U.jake, 'select * from public.payouts')).toHaveLength(0)
     expect(await select(db, U.maya, 'select * from public.payouts')).toHaveLength(1)
-    const led = await rpc<{ people: unknown[] }>(db, U.jake, 'admin_ledger')
-    expect(led.people).toEqual([])
+    const led = await rpc<{ people: { display_name: string; remaining_cents: number }[] }>(db, U.jake, 'admin_ledger')
+    expect(led.people.map((p) => [p.display_name, p.remaining_cents])).toEqual([['Dev', 0], ['Maya', 0]])
     const mine = await rpc<{ totals: { committed_cents: number; refund_cents: number; remaining_cents: number } }>(db, U.maya, 'my_ledger')
     expect(mine.totals).toMatchObject({ committed_cents: 1000, refund_cents: 1000, remaining_cents: 0 })
   })
@@ -225,7 +228,7 @@ describe('closing boundary and locked terms', () => {
   })
 
   test('deadlines must be in the future and before Election Day; defaults are admin-only and lock', async () => {
-    const mid = await rpc<string>(db, U.maya, 'propose_market', { p_kind: 'house', p_title: 'TX-01', p_jurisdiction: 'TX', p_candidates: CANDS })
+    const mid = await rpc<string>(db, U.maya, 'propose_market', { p_kind: 'house', p_title: 'TX-01', p_jurisdiction: 'TX', p_candidates: CANDS, p_polling_ref: { state: 'tx', district: '1' } })
     const base = { p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'x', p_buy_in_cents: 1000 }
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
@@ -477,5 +480,37 @@ describe('polling snapshots', () => {
     expect(m.polling.at_close.as_of).toBe('2026-10-01')
     expect(m.polling.at_close.data.undecided).toBe(7)
     await expect(rpc(db, U.maya, 'record_polling', { p_market: mid, p_source_name: 'x', p_source_url: null, p_as_of: '2026-10-01', p_data: { candidates: [] } })).rejects.toThrow(/admin only/i)
+  })
+})
+
+describe('contact numbers and polling link', () => {
+  test('phone numbers are visible only to their owner and the admin', async () => {
+    await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'zed@example.test', $2)`, [
+      id(9), JSON.stringify({ display_name: 'Zed', phone: '(312) 555-0123' }),
+    ])
+    expect(await select(db, id(9), 'select phone from public.member_contacts')).toEqual([{ phone: '+13125550123' }])
+    expect(await select(db, U.maya, 'select phone from public.member_contacts')).toHaveLength(0)
+    expect(await select(db, U.sam, 'select phone from public.member_contacts')).toHaveLength(0)
+    await rpc(db, U.maya, 'set_my_phone', { p_phone: '+1 415 555 0100' })
+    await expect(rpc(db, U.dev, 'set_my_phone', { p_phone: '4155550100' })).rejects.toThrow(/already on another/i)
+    await expect(rpc(db, U.dev, 'set_my_phone', { p_phone: '12' })).rejects.toThrow(/phone number/i)
+    await expect(rpc(db, U.maya, 'admin_members')).rejects.toThrow(/admin only/i)
+    const roster = await rpc<{ display_name: string; phone: string | null }[]>(db, U.jake, 'admin_members')
+    expect(roster.find((r) => r.display_name === 'Maya')!.phone).toBe('+14155550100')
+    expect(JSON.stringify(await select(db, U.maya, 'select * from public.profiles'))).not.toMatch(/\+1415/)
+  })
+
+  test('every race is tied to a polling-source race; the reference is normalized', async () => {
+    const base = { p_kind: 'house', p_title: 'AZ-01', p_jurisdiction: '', p_candidates: CANDS }
+    await expect(rpc(db, U.maya, 'propose_market', base)).rejects.toThrow(/polling average/i)
+    await expect(rpc(db, U.maya, 'propose_market', { ...base, p_polling_ref: { state: 'ZZ', district: '1' } })).rejects.toThrow(/state code/i)
+    await expect(rpc(db, U.maya, 'propose_market', { ...base, p_polling_ref: { state: 'AZ' } })).rejects.toThrow(/district/i)
+    const mid = await rpc<string>(db, U.maya, 'propose_market', { ...base, p_polling_ref: { state: 'az', district: '1' } })
+    const m = (await rpc<{ id: string; polling_ref: unknown; jurisdiction: string }[]>(db, U.dev, 'list_markets')).find((x) => x.id === mid)!
+    expect(m.polling_ref).toEqual({ race_type: 'house', state: 'AZ', district: '01', special: false })
+    expect(m.jurisdiction).toBe('AZ-01')
+    const sen = await rpc<string>(db, U.maya, 'propose_market', { ...base, p_kind: 'senate', p_title: 'OH', p_polling_ref: { state: 'OH', special: true } })
+    const s = (await rpc<{ id: string; polling_ref: unknown }[]>(db, U.dev, 'list_markets')).find((x) => x.id === sen)!
+    expect(s.polling_ref).toEqual({ race_type: 'senate', state: 'OH', district: null, special: true })
   })
 })

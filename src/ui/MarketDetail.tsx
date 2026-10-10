@@ -5,11 +5,20 @@ import { formatET, pct, plural, usd } from '../domain/format'
 import { allocate, groupForecast, type Draft } from '../domain/race'
 import { HOUSE_TOTAL, SENATE_TOTAL, meanSeats, remainder } from '../domain/seats'
 import type { Candidate, Entry, Market, MarketDetail, Payout, PollSnapshot, Run, Seats } from '../domain/types'
+import { useEffect } from 'react'
+import { refreshMarket } from '../polling/client'
 import { Err, Loading, PartyTag, PhasePill, ShareBar, ShareButton, StripPlot, candColor, partyVar } from './common'
+import { PollingLink } from './RaceLink'
 
 export function MarketPage() {
   const { id } = useParams()
+  const { backend } = useApp()
   const { data, error, loading, reload } = useRpc<MarketDetail>('get_market', { p_id: id })
+  // Ask the server to refresh polling (it caches for 6 hours and is off unless enabled).
+  useEffect(() => {
+    if (id) refreshMarket(backend, id).then((r) => r?.status === 'refreshed' && reload())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, backend])
   if (loading && !data) return <Loading />
   if (!data) return <main className="page" id="main"><Err>{error ?? 'Market not found.'}</Err><Link to="/">Back to markets</Link></main>
   const m = data.market
@@ -139,11 +148,13 @@ function PollingBlock({ d }: { d: MarketDetail }) {
   if (m.kind === 'congress') {
     return <section className="section"><h2>Polling context</h2><p className="muted">No seat projection connected.</p></section>
   }
+  const link = m.polling_ref ? <PollingLink r={m.polling_ref} /> : null
   if (m.phase === 'open' || m.phase === 'proposed') {
     return (
       <section className="section">
         <h2>Polling context</h2>
         {latest ? <Snapshot s={latest} markStale /> : <p className="muted">No polling average available.</p>}
+        {link}
       </section>
     )
   }
@@ -153,6 +164,7 @@ function PollingBlock({ d }: { d: MarketDetail }) {
       <h2>Polling at close</h2>
       {at_close ? <Snapshot s={at_close} markStale={false} /> : <p className="muted">The polling snapshot at close wasn&rsquo;t captured.</p>}
       {newer && (<><h3>Newer polling (after close)</h3><Snapshot s={newer} markStale={false} /></>)}
+      {link}
     </section>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppProvider, useApp } from './data/context'
 import { rememberDestination } from './lib'
-import { AuthPage, CallbackPage, ResetPage } from './ui/Auth'
+import { AuthPage } from './ui/Auth'
 import { JoinPage } from './ui/Join'
 import { Loading } from './ui/common'
 import { MarketsPage } from './ui/Markets'
@@ -116,8 +116,6 @@ function Shell() {
       <div key={uid ?? 'anon'}>
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
-          <Route path="/auth/callback" element={<CallbackPage />} />
-          <Route path="/auth/reset" element={<ResetPage />} />
           <Route path="/join/:token" element={<JoinPage />} />
           <Route path="/" element={<Gate><MarketsPage /></Gate>} />
           <Route path="/m/:id" element={<Gate><MarketPage /></Gate>} />

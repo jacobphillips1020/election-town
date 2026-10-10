@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAdminName, useApp } from '../data/context'
-import type { Basis } from '../domain/types'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAdminName, useApp, useRpc } from '../data/context'
+import { stateName, suggestTitle } from '../domain/states'
+import type { Basis, Market } from '../domain/types'
 import { Err } from './common'
+import { EMPTY_REF, LookupPreview, RaceLinkFields, toRef } from './RaceLink'
 
 type Row = { name: string; party: string }
 
@@ -10,9 +12,11 @@ export function ProposePage() {
   const { backend } = useApp()
   const admin = useAdminName()
   const nav = useNavigate()
+  const existing = useRpc<Market[]>('list_markets')
   const [kind, setKind] = useState('senate')
+  const [link, setLink] = useState(EMPTY_REF)
   const [title, setTitle] = useState('')
-  const [jurisdiction, setJurisdiction] = useState('')
+  const [titleEdited, setTitleEdited] = useState(false)
   const [rows, setRows] = useState<Row[]>([{ name: '', party: 'D' }, { name: '', party: 'R' }])
   const [hasOther, setHasOther] = useState(true)
   const [basis, setBasis] = useState<Basis>('single_round')
@@ -20,17 +24,28 @@ export function ProposePage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const ref = toRef(kind, link)
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+
+  useEffect(() => {
+    if (!titleEdited && ref) setTitle(suggestTitle(kind, ref.state, ref.district ?? ''))
+  }, [kind, ref?.state, ref?.district, titleEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dup = ref && (existing.data ?? []).find((m) =>
+    m.polling_ref && m.phase !== 'rejected' && m.phase !== 'canceled' && m.polling_ref.race_type === ref.race_type &&
+    m.polling_ref.state === ref.state && m.polling_ref.district === ref.district && m.polling_ref.special === ref.special)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    if (!ref) return setError('Choose the state' + (kind === 'house' ? ' and district' : '') + ' so the race can be matched to its polling average.')
     setBusy(true)
     setError('')
     try {
       const id = await backend.rpc<string>('propose_market', {
-        p_kind: kind, p_title: title.trim(), p_jurisdiction: jurisdiction.trim(),
+        p_kind: kind, p_title: title.trim(),
+        p_jurisdiction: kind === 'house' ? `${stateName(ref.state)} ${ref.state}-${ref.district}` : stateName(ref.state),
         p_candidates: rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), party: r.party })),
-        p_has_other: hasOther, p_basis: basis, p_note: note.trim(),
+        p_has_other: hasOther, p_basis: basis, p_note: note.trim(), p_polling_ref: ref,
       })
       nav(`/m/${id}`)
     } catch (err) {
@@ -45,30 +60,32 @@ export function ProposePage() {
       <h1>Propose a race</h1>
       <p className="muted">{admin} reviews proposals and sets the buy-in and entry deadline. Senate, House, and governor races only.</p>
       <form onSubmit={submit}>
-        <div className="grid2">
-          <div className="field">
-            <label htmlFor="kind">Race type</label>
-            <select id="kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="senate">U.S. Senate</option>
-              <option value="house">U.S. House</option>
-              <option value="governor">Governor</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="jur">State / district</label>
-            <input id="jur" value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} placeholder="e.g. Ohio, or OH-09" />
-          </div>
-        </div>
         <div className="field">
+          <label htmlFor="kind">Race type</label>
+          <select id="kind" value={kind} onChange={(e) => { setKind(e.target.value); setLink({ ...link, district: '' }) }}>
+            <option value="senate">U.S. Senate</option>
+            <option value="house">U.S. House</option>
+            <option value="governor">Governor</option>
+          </select>
+        </div>
+        <RaceLinkFields kind={kind} value={link} onChange={setLink} />
+        <LookupPreview r={ref} />
+        {dup && (
+          <p className="callout warn">
+            A market for this race already exists: <Link to={`/m/${dup.id}`}>{dup.title}</Link>. Check it before proposing another.
+          </p>
+        )}
+
+        <div className="field" style={{ marginTop: 12 }}>
           <label htmlFor="title">Title</label>
-          <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Ohio Senate" required />
+          <input id="title" value={title} onChange={(e) => { setTitle(e.target.value); setTitleEdited(true) }} required />
         </div>
 
         <fieldset style={{ border: 0, padding: 0, margin: '0 0 12px' }}>
           <legend style={{ fontWeight: 650, fontSize: '.9rem', marginBottom: 4 }}>Candidates on the ballot</legend>
           {rows.map((r, i) => (
             <div className="row" key={i} style={{ marginBottom: 8 }}>
-              <input className="grow" aria-label={`Candidate ${i + 1} name`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="Full name" style={{ flex: '1 1 12rem' }} />
+              <input aria-label={`Candidate ${i + 1} name`} value={r.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="Full name" style={{ flex: '1 1 12rem' }} />
               <select aria-label={`Candidate ${i + 1} party`} value={r.party} onChange={(e) => set(i, { party: e.target.value })} style={{ width: '9rem' }}>
                 <option value="D">Democratic</option><option value="R">Republican</option><option value="I">Independent</option>
                 <option value="L">Libertarian</option><option value="G">Green</option><option value="O">Other party</option>

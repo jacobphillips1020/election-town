@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useRpc } from '../data/context'
+import { useApp, useRpc } from '../data/context'
 import { formatET, plural, usd } from '../domain/format'
 import type { Kind, Market, Phase } from '../domain/types'
 import { Err, Loading, PhasePill } from './common'
@@ -49,6 +49,27 @@ export function MarketRow({ m }: { m: Market }) {
   )
 }
 
+function PhonePrompt() {
+  const { backend, me, refreshMe } = useApp()
+  const [phone, setPhone] = useState('')
+  const [error, setError] = useState('')
+  if (!me || me.has_phone) return null
+  return (
+    <form className="panel" onSubmit={async (e) => {
+      e.preventDefault()
+      try { await backend.rpc('set_my_phone', { p_phone: phone }); refreshMe() } catch (err) { setError(err instanceof Error ? err.message : 'Could not save.') }
+    }}>
+      <label htmlFor="myphone">Add your mobile number</label>
+      <p className="hint" style={{ marginTop: 0 }}>Only the organizer sees it. It&rsquo;s how they reach you about payments and deadlines.</p>
+      <div className="row">
+        <input id="myphone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(312) 555-0123" style={{ flex: '1 1 12rem' }} />
+        <button className="btn">Save</button>
+      </div>
+      <Err>{error}</Err>
+    </form>
+  )
+}
+
 export function MarketsPage() {
   const { data, error, loading } = useRpc<Market[]>('list_markets')
   const [params, setParams] = useSearchParams()
@@ -67,6 +88,7 @@ export function MarketsPage() {
         <h1 style={{ margin: 0 }}>Markets</h1>
         <Link to="/propose" className="btn">Propose a race</Link>
       </div>
+      <PhonePrompt />
       <div className="filters" role="group" aria-label="Status">
         {TABS.map((t) => (
           <button key={t.id} className="chip" aria-pressed={t.id === tab.id} onClick={() => setParams(t.id === 'open' ? {} : { tab: t.id })}>

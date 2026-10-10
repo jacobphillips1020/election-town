@@ -6,6 +6,7 @@ import { parseTenths } from '../domain/race'
 import { HOUSE_TOTAL, SENATE_TOTAL } from '../domain/seats'
 import type { Basis, Market, MarketDetail, Seats } from '../domain/types'
 import { Err, Loading } from './common'
+import { RaceLinkFields, refToDraft, toRef } from './RaceLink'
 
 function useAction() {
   const [error, setError] = useState('')
@@ -79,13 +80,16 @@ function ApproveForm({ m, onDone, label }: { m: Market; onDone: () => void; labe
   const [note, setNote] = useState(m.rules_note)
   const [buyIn, setBuyIn] = useState(centsToDollars(m.buy_in_cents ?? g.default_buy_in_cents))
   const [when, setWhen] = useState(toETInput(m.entry_deadline ?? g.default_deadline))
+  const [link, setLink] = useState(refToDraft(m.polling_ref))
   const a = useAction()
   const cents = dollarsToCents(buyIn)
   const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? fromETInput(when) : null
   const congress = m.kind === 'congress'
+  const ref = toRef(m.kind, link)
 
   return (
     <div className="panel">
+      {!congress && <RaceLinkFields kind={m.kind} value={link} onChange={setLink} />}
       {!congress && rows.map((r, i) => (
         <div className="row" key={i} style={{ marginBottom: 6 }}>
           <input aria-label={`Candidate ${i + 1}`} value={r.name} style={{ flex: '1 1 12rem' }} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
@@ -129,10 +133,10 @@ function ApproveForm({ m, onDone, label }: { m: Market; onDone: () => void; labe
       </div>
       <Err>{a.error}</Err>
       <div className="row">
-        <button className="btn" disabled={a.busy || cents === null || !iso} onClick={() => a.run(async () => {
+        <button className="btn" disabled={a.busy || cents === null || !iso || (!congress && !ref)} onClick={() => a.run(async () => {
           await backend.rpc('approve_market', {
             p_id: m.id, p_candidates: rows.map((r) => ({ name: r.name, party: r.party })), p_has_other: hasOther, p_basis: basis,
-            p_rules_note: note, p_buy_in_cents: cents, p_deadline: iso,
+            p_rules_note: note, p_buy_in_cents: cents, p_deadline: iso, p_polling_ref: congress ? null : ref,
           })
           onDone()
         })}>{label}</button>
@@ -210,6 +214,8 @@ function PollingForm({ m, onDone }: { m: Market; onDone: () => void }) {
 function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => void }) {
   const { backend } = useApp()
   const a = useAction()
+  const who = useRpc<{ open_entrants: { market_id: string; names: string[] }[] }>('admin_ledger')
+  const entered = (id: string) => who.data?.open_entrants.find((x) => x.market_id === id)?.names ?? []
   const [open, setOpen] = useState<string | null>(null)
   if (markets.length === 0) return <p className="muted">No open markets.</p>
   return (
@@ -222,6 +228,7 @@ function OpenMarkets({ markets, reload }: { markets: Market[]; reload: () => voi
             {formatET(m.entry_deadline)} · {usd(m.buy_in_cents ?? 0)} · {m.entrants} {m.entrants === 1 ? 'entry' : 'entries'}
             {m.entrants > 0 && ' · terms locked'}
           </p>
+          {m.entrants > 0 && <p className="small"><strong>Entered:</strong> {entered(m.id).join(', ') || '…'} <span className="muted">(picks stay sealed)</span></p>}
           <div className="row">
             {m.entrants === 0 && <button className="btn ghost small" onClick={() => setOpen(open === m.id + 'e' ? null : m.id + 'e')}>Edit terms</button>}
             {m.kind !== 'congress' && <button className="btn ghost small" onClick={() => setOpen(open === m.id + 'p' ? null : m.id + 'p')}>Record polling</button>}
@@ -442,14 +449,14 @@ function LedgerTab() {
       <Err>{error}</Err>
       <p className="muted small">
         Remaining = committed − gross payouts − refunds − collected + paid out. Positive: they owe you. Negative: you owe them.
-        Entries on markets that haven&rsquo;t closed aren&rsquo;t shown here, so picks stay private from you too.
+        You can see who has entered open markets, but never what they picked until entries close.
       </p>
       {data.people.length === 0 ? <p className="muted">No settled or closed markets yet.</p> : (
         <div className="scroll-x">
           <table className="t">
             <thead>
               <tr><th>Name</th><th className="num">Committed</th><th className="num">Gross payouts</th><th className="num">Refunds</th>
-                <th className="num">Collected</th><th className="num">Paid out</th><th className="num">Remaining</th><th className="num">Awaiting results</th><th /></tr>
+                <th className="num">Collected</th><th className="num">Paid out</th><th className="num">Remaining</th><th className="num">Unsettled</th><th /></tr>
             </thead>
             <tbody>
               {data.people.map((p) => (
@@ -511,6 +518,46 @@ function LedgerTab() {
 
 /* ------------------------------------------------------------ group */
 
+type Member = { user_id: string; display_name: string; phone: string | null; joined_at: string; is_admin: boolean }
+
+function Roster() {
+  const { data, error } = useRpc<Member[]>('admin_members')
+  const [copied, setCopied] = useState('')
+  if (!data) return <Err>{error}</Err>
+  const pretty = (p: string | null) => (p && /^\+1\d{10}$/.test(p) ? `(${p.slice(2, 5)}) ${p.slice(5, 8)}-${p.slice(8)}` : p ?? 'No number')
+  const numbers = data.filter((m) => m.phone && !m.is_admin).map((m) => m.phone!)
+  return (
+    <section className="section">
+      <h2>Members and phone numbers</h2>
+      <p className="muted small">Only you can see these. Use them to text people about deadlines and payments.</p>
+      <div className="scroll-x">
+        <table className="t">
+          <thead><tr><th>Name</th><th>Phone</th><th>Joined</th></tr></thead>
+          <tbody>
+            {data.map((m) => (
+              <tr key={m.user_id}>
+                <td>{m.display_name}{m.is_admin && <span className="muted"> (you)</span>}</td>
+                <td>{m.phone ? <a href={`sms:${m.phone}`}>{pretty(m.phone)}</a> : <span className="wrong">No number</span>}</td>
+                <td>{m.joined_at.slice(0, 10)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="btn ghost" disabled={numbers.length === 0} onClick={async () => {
+          try { await navigator.clipboard.writeText(numbers.join(', ')); setCopied(`Copied ${numbers.length} numbers. Paste them into a new Messages group.`) } catch { setCopied(numbers.join(', ')) }
+        }}>Copy all numbers</button>
+        <button className="btn ghost" onClick={() => download('election-town-members.csv', [
+          ['name', 'phone', 'joined'], ...data.map((m) => [m.display_name, m.phone ?? '', m.joined_at.slice(0, 10)]),
+        ])}>Export CSV</button>
+      </div>
+      {copied && <p className="small ok" role="status">{copied}</p>}
+      <p className="hint">Forgot-password requests come to you by text: run <code>supabase/seed/reset_member_password.sql</code> in the Supabase SQL editor with their number and a temporary password.</p>
+    </section>
+  )
+}
+
 function GroupTab() {
   const { backend, me, refreshMe } = useApp()
   const g = me!.group!
@@ -541,6 +588,8 @@ function GroupTab() {
           return 'Saved.'
         })}>Save defaults</button>
       </section>
+
+      <Roster />
 
       <section className="section">
         <h2>Invitation links</h2>

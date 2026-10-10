@@ -8,10 +8,10 @@ export interface Backend {
   userId(): string | null
   subscribe(cb: () => void): () => void
   signIn(email: string, password: string): Promise<void>
-  signUp(email: string, password: string, displayName: string, next: string): Promise<{ needsVerification: boolean }>
+  signUp(email: string, password: string, displayName: string, phone: string): Promise<{ needsVerification: boolean }>
   signOut(): Promise<void>
-  sendReset(email: string): Promise<void>
-  setPassword(password: string): Promise<void>
+  /** Bearer token for the server-side polling endpoint (null in demo). */
+  accessToken(): Promise<string | null>
   // Demo only
   personas?: Persona[]
   actAs?(id: string | null): void

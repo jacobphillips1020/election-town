@@ -6,7 +6,8 @@
 --     They never get INSERT/UPDATE/DELETE on tables.
 --   * Sealed picks: entries are readable only by their owner until the market's
 --     entry_deadline passes (judged by database time), then by group members.
---     There is deliberately no admin exception.
+--     There is deliberately no admin exception for picks. (The admin may see WHO has
+--     entered an open market, via admin_ledger(); never what they picked.)
 --   * Admin = a row in `admins`, created only by supabase/seed/bootstrap_admin.sql
 --     run by the project owner. No API path creates admins.
 
@@ -37,6 +38,12 @@ create table public.profiles (
   user_id uuid primary key references auth.users on delete cascade,
   display_name text not null check (char_length(btrim(display_name)) between 1 and 40),
   created_at timestamptz not null default now()
+);
+
+-- Contact numbers. Not in profiles, so members can never read each other's numbers.
+create table public.member_contacts (
+  user_id uuid primary key references auth.users on delete cascade,
+  phone text not null unique check (phone ~ '^\+[0-9]{10,15}$')
 );
 
 create table public.invites (
@@ -306,11 +313,25 @@ create trigger payouts_append_only before update or delete on public.payouts
   for each row execute function app.append_only();
 
 -- Profile row on sign-up. Display name comes from sign-up metadata; never the email.
+-- "(312) 555-0123" -> "+13125550123". US numbers by default; returns null if it doesn't look like a phone number.
+create function app.normalize_phone(p text) returns text
+language plpgsql immutable as $$
+declare d text := regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g');
+begin
+  if char_length(d) = 10 then return '+1' || d; end if;
+  if char_length(d) between 11 and 15 then return '+' || d; end if;
+  return null;
+end $$;
+
 create function app.handle_new_user() returns trigger
 language plpgsql security definer set search_path = '' as $$
+declare v_phone text := app.normalize_phone(new.raw_user_meta_data ->> 'phone');
 begin
   insert into public.profiles (user_id, display_name)
   values (new.id, left(coalesce(nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''), 'Member'), 40));
+  if v_phone is not null then
+    insert into public.member_contacts (user_id, phone) values (new.id, v_phone) on conflict do nothing;
+  end if;
   return new;
 end $$;
 
@@ -324,6 +345,7 @@ alter table public.admins enable row level security;
 alter table public.members enable row level security;
 alter table public.profiles enable row level security;
 alter table public.invites enable row level security;
+alter table public.member_contacts enable row level security;
 alter table public.markets enable row level security;
 alter table public.entries enable row level security;
 alter table public.settlement_runs enable row level security;
@@ -335,6 +357,7 @@ create policy group_read on public.group_settings for select using (app.is_membe
 create policy admins_self on public.admins for select using (user_id = auth.uid());
 create policy members_read on public.members for select using (app.is_member());
 create policy profiles_read on public.profiles for select using (user_id = auth.uid() or app.is_member());
+create policy contacts_own_or_admin on public.member_contacts for select using (user_id = auth.uid() or app.is_admin());
 create policy invites_admin on public.invites for select using (app.is_admin());
 create policy markets_read on public.markets for select using (app.is_member());
 
