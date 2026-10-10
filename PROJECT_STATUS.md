@@ -1,81 +1,57 @@
 # Election Town: project status
 
-Private prediction pool for friends on the Nov 2026 US midterms. Vite + React + TypeScript;
-Supabase (Auth + Postgres with row-level security) for the live version. Last updated 2026-10-09.
+**v1 launched 2026-10-10 · https://election-town.vercel.app**
 
-**State (2026-10-09): built and tested (53 tests). Private GitHub repo: jacobphillips1020/election-town. Supabase project
-`election-town` (us-east-1) created, migrations applied, Confirm email OFF, admin bootstrapped. Runs locally against the
-live project (`.env.local`, git-ignored). **Deployed: https://election-town.vercel.app** (Vercel Hobby, auto-deploys on
-push to `main`). Polling is ON by default (kill switch: `POLLINGSOURCE_DISABLED=true`); storing snapshots needs `SUPABASE_SERVICE_ROLE_KEY` in Vercel.**
+Friends' prediction pool for the Nov 2026 US midterms. Vite + React + TypeScript on Vercel (Hobby), Supabase
+(Auth + Postgres with row-level security) in project `election-town` (ref `gupgyvyxocsxqbwjyira`, us-east-1).
+Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys.
 
-## What exists
+## How it works (v1)
 
-- `supabase/migrations/` (4 files): tables, guards, RLS, scoring, settlement, ledger, RPC surface, privileges, then the race
-  catalog + `propose_race` (20261010000001). **Migration 4 must be applied to the live project before deploying the UI that calls it.**
-  Scoring and settlement live **only** in SQL; the UI previews by calling the same functions.
-- `src/` React app: Markets, Market detail (entry form, sealed receipt, reveal, results), My entries, Propose,
-  Admin (proposals, markets, results/settlement/corrections, ledger + CSV, members + phone numbers, group defaults, invites).
-- Demo mode (no env vars): the real migrations run in an in-browser Postgres (PGlite) with fictional fixtures
-  (`src/demo/seed.sql`). Yellow bar says so. It is not a multiuser service.
-- `api/polling.ts` + `src/polling/{pollingsource,refresh}.ts`: server-side race lookup/refresh, 6 h cache, members only,
-  on by default. A race with no published average is stored as an explicit "none yet" snapshot (no re-polling).
+- **Browse without an account:** markets, polling, entry counts/pools, the race board, the home "Closest races".
+- **Sign up = name + mobile + password** (no email; login id is derived from the phone, "Confirm email" is off).
+  Older email accounts (Jake's) sign in with their email. Open sign-up: new accounts join the group automatically;
+  Admin → Group has an invite-only switch.
+- **Open a market in one step:** pick a race on the board → "Open market & place bet". `launch_race` opens it on the
+  group defaults ($10 buy-in, entries close Nov 2 8:00 p.m. ET) with candidates (top two by polling) and rules from
+  the data. Only races with published candidate names can be opened. No approval queue. One market per race.
+- **Bets:** fixed buy-in, editable/withdrawable until close; sealed until the deadline (database time), then revealed
+  to members with the group forecast. Visitors never see picks, names on picks, balances, or phone numbers.
+- **Settlement, ledger, CSV, corrections, transfers:** Admin tabs Markets / Results / Ledger / Group.
+- **Polling:** PollingSource API (free, no key; see below). Race board refreshed daily by Vercel cron
+  (`/api/polling-cron`, 10:00 UTC) and on demand (≤ every 12 h); each market's snapshot stored when opened and
+  ≤ every 6 h; the "polling at close" snapshot is the last one before the deadline.
+- **Look:** Jake's banner artwork (`public/banner.jpg`) + navy menu bar; clean app below; 90s footer.
 
-## Decisions
+## Code map
 
-- **Accounts:** email + password with **"Confirm email" OFF** in Supabase, so the app never sends email. Email is
-  just the login name. **Phone number is required at sign-up** and stored in `member_contacts` (admin-only read);
-  that is how the admin reaches people. Forgotten passwords: friend texts the admin, admin runs
-  `supabase/seed/reset_member_password.sql`. Automated texting (e.g. Twilio) is a possible later add-on.
-- **Admin sees who has entered an open market, never what they picked** (owner decision 2026-10-09). Other
-  members still can't see who has entered until close. Picks are sealed from the admin in RLS.
-- **Proposals are system-defined (owner decision 2026-10-10):** the only input is picking a race from the 506-race
-  2026 catalog (`race_catalog` table; 35 Senate incl. OH/FL specials, 36 governor, 435 House). `propose_race` derives
-  title, candidates (loaded from the polling data, "to be confirmed" placeholders otherwise), outcome basis
-  (AK/ME → ranked-choice final round, GA → runoff-capable, else single round), "Other" remainder (always on) and the
-  resolution wording. There is no free-form proposal API. One live market per race. Admin edits candidates at approval;
-  a race can't open while any "to be confirmed" name remains.
-- **Polling:** fetched the moment a race is proposed, refreshed ≤ every 6 h when opened, and daily by a Vercel cron
-  (`/api/polling-cron`, 10:00 UTC) so averages move day over day and a snapshot exists before each deadline.
-- **Race ↔ polling link:** every race market stores `polling_ref` = {race_type, state, district, special}.
-  The adapter refuses to store a response whose race/state/district/special flag doesn't match.
-- **Winner must be strictly largest among named candidates.** "Other candidates" is an aggregate, not compared.
-- **Closing is derived from database time** in RLS and write guards: no cron, no page visit needed.
-  Fewer-than-two-entrant cancellation is recorded by a deterministic idempotent sweep run on any member's load.
-- **Withdraw deletes the entry** (no edit history is kept).
-- **Group default deadline/buy-in** pre-fill new markets; editable only while no entry exists anywhere.
-- **Polling "at close" snapshot** = latest snapshot captured at or before the deadline. If none, UI says so.
-- **Admin bootstrap** is `supabase/seed/bootstrap_admin.sql`, run once by the project owner. No API path.
-- **Control of Congress** market is seeded by the migration; caucus treatment is in its `rules_note`.
+- `supabase/migrations/` (8 files, all applied to the live project, in order): tables/RLS → logic → privileges →
+  race catalog → race board → public browsing/open sign-up → one-step launch → open leftover proposals.
+  Scoring and settlement live only in SQL.
+- `src/` app; `src/data/` live (Supabase) and demo (in-browser Postgres) backends behind one `rpc()`.
+- `api/polling.ts` (member-only lookups/refresh), `api/polling-cron.ts` (daily job), `src/polling/*` (adapter, board, refresh).
+- Tests: `npm test` (92): DB authorization for visitors/non-members/members/admin, sealed picks, deadline boundary,
+  scoring/ties/pennies, idempotent settlement, ledger, launch rules, polling adapter/board/refresh, catalog.
+- `vite.config.ts` fails a production build if the Supabase settings are missing (prevents a silent demo deploy).
 
-## PollingSource (verified 2026-10-09)
+## Keys and settings
 
-- `GET https://pollingsource.com/api/v1/race?race_type=&state=[&district=]` returned JSON **with no key and no
-  payment** (4 small test requests). The About page nonetheless lists API access under Pro ($15/mo); Terms are
-  silent on caching and prohibit automated collection "without permission". Owner decision: use it free, send a
-  courtesy email, pay only if they ask or cut access. Fallback if cut off: last snapshot (marked stale) + manual entry.
-- Averages are Democratic and Republican only (no other candidates, no undecided). Shown as published.
-- Special elections: API has an `is_special` flag but no documented way to pick between two Senate races in one
-  state (OH and FL have specials in 2026). The adapter treats a flag mismatch as "not this race"; use manual entry.
+- Vercel env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (= the **publishable** key, type Config),
+  `SUPABASE_SERVICE_ROLE_KEY` (= the **sb_secret** key, type Secret). Local: `.env.local` (git-ignored).
+- Supabase legacy JWT keys (anon/service_role) are **disabled** (one was exposed in a screenshot on 2026-10-10).
+- Forgotten passwords: friend texts Jake → run `supabase/seed/reset_member_password.sql` in the SQL editor.
 
-## Coverage note
+## PollingSource
 
-PollingSource publishes averages for 27/35 Senate, 29/36 governor and 80/435 House races (2026-10-10), D and R only.
-Candidate names auto-load only for those; other races get placeholders the admin replaces at approval. A future
-option is the FEC API (free key) to suggest names for unpolled races.
+`/api/v1/races` and `/api/v1/race` return JSON with no key. About page ties API access to Pro ($15/mo); Terms are
+silent on caching. Owner decision: use it free, small cached volume, pay only if asked. Coverage 2026-10-10:
+27/35 Senate, 29/36 governor, 80/435 House; D and R averages only; 122 races have both candidate names.
 
-## Next steps (Jake)
+## Known gaps / next ideas
 
-1. On the live site: Admin → Group → create an invitation link (it will use the live address), text it to one friend,
-   confirm they appear under Members with their phone number.
-2. Create the real races (members propose; admin approves in Admin → Proposals). Deadlines default to Nov 2, 8:00 p.m. ET.
-3. Polling: add `SUPABASE_SERVICE_ROLE_KEY` in Vercel (Supabase → Project Settings → API; Vercel only, never git or a
-   VITE_ variable), then redeploy. Polling for a race is fetched and stored the moment it is proposed, and refreshed
-   at most every 6 hours when someone opens it.
-4. Optional: courtesy email to PollingSource.
-
-## Not verified (could not run here)
-
-- Phone landing in `member_contacts` for the real sign-up (covered by tests against a stand-in auth schema; check Admin → Group → Members).
-- `extensions.crypt` in `reset_member_password.sql` on a real Supabase project.
-- The Vercel function in `api/` (never deployed).
-- Native share sheet on a phone (copy-link fallback implemented).
+- **Test the phone sign-up with a second real number** before sharing widely (not testable by Claude).
+- Unpolled races and polled races without names can't be opened (FEC API could supply names later).
+- Independents/third parties are covered only by "Other candidates" (not pickable as winner).
+- Vercel's bot checkpoint may challenge scripted requests; browsers and Vercel cron are fine.
+- `/api/polling-cron` is callable without a secret (harmless: rate-limited by freshness). Optionally set `CRON_SECRET`.
+- Optional: custom domain (Vercel → Settings → Domains), courtesy email to PollingSource.
