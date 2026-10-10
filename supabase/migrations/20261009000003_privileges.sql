@@ -39,3 +39,16 @@ grant execute on function
   app.market_closed(uuid), app.deadline_passed_at(timestamptz, timestamptz),
   app.market_stats(uuid), app.market_json(public.markets), app.sweep_underfilled()
   to authenticated;
+
+-- Realtime would stream row changes to subscribers. Keep every table out of the publication
+-- so picks can never leak that way (RLS is not a substitute for not publishing sealed rows).
+do $$
+declare t record;
+begin
+  for t in select schemaname, tablename from pg_publication_tables
+           where pubname = 'supabase_realtime' and schemaname = 'public' loop
+    execute format('alter publication supabase_realtime drop table %I.%I', t.schemaname, t.tablename);
+  end loop;
+exception when undefined_object then
+  null; -- no realtime publication (plain Postgres / tests)
+end $$;

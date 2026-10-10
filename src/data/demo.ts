@@ -9,7 +9,7 @@ const DB_NAME = 'idb://election-town-demo-v1'
 const ACTOR_KEY = 'et-demo-actor'
 
 export const PERSONAS: Persona[] = [
-  { id: 'd0000000-0000-4000-8000-000000000001', name: 'Demo Admin', note: 'Group admin (stands in for Jake)' },
+  { id: 'd0000000-0000-4000-8000-000000000001', name: 'Demo Admin', note: 'Group admin' },
   { id: 'd0000000-0000-4000-8000-000000000002', name: 'Maya', note: 'Member' },
   { id: 'd0000000-0000-4000-8000-000000000003', name: 'Dev', note: 'Member' },
   { id: 'd0000000-0000-4000-8000-000000000004', name: 'Priya', note: 'Member' },

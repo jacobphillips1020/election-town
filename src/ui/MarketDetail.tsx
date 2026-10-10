@@ -312,7 +312,7 @@ function RaceForm({ m, existing, onSaved, onCancel }: { m: Market; existing: Ent
         <label htmlFor="wpct">{winner ? `${winner.name}'s` : 'Winner’s'} share of all valid votes (%)</label>
         <input id="wpct" inputMode="decimal" value={draft.winnerPct} placeholder="e.g. 51.8"
           onChange={(e) => setDraft({ ...draft, winnerPct: e.target.value })} aria-describedby="wpct-h" />
-        <p className="hint" id="wpct-h">Share of all valid candidate votes, one decimal place. Plurality wins are fine; the winner doesn&rsquo;t need 50%.</p>
+        <p className="hint" id="wpct-h">Share of all valid candidate votes, one decimal place. Plurality wins are fine; the winner doesn&rsquo;t need 50%. Settlement uses the certified result rounded once to one decimal place.</p>
       </div>
 
       {draft.winnerId && (
@@ -537,7 +537,7 @@ function RaceReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
                 color={partyVar(c.party)} label={`Predicted share for ${c.name}`} />
             </div>
           ))}
-          <p className="hint">Each dot is one entrant; the dark line is the group average. Scale 0–100%.</p>
+          <p className="hint">Each dot is one entrant; the dark line is the group average. The scale is zoomed to the range of predictions.</p>
         </div>
       )}
 

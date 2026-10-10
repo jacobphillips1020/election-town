@@ -77,18 +77,20 @@ export function candColor(c: Candidate | undefined) {
   return partyVar(c?.party)
 }
 
-/** One entrant's value per dot on a 0–100 line, with the group mean as a tick. Pure SVG, no library. */
-export function StripPlot({ values, mean, min = 0, max = 100, color, label }: {
-  values: number[]; mean: number; min?: number; max?: number; color: string; label: string
-}) {
-  const x = (v: number) => ((v - min) / (max - min)) * 100
+/** One dot per entrant on a zoomed percentage line, with the group mean as a tick. Plain DOM, no library. */
+export function StripPlot({ values, mean, color, label }: { values: number[]; mean: number; color: string; label: string }) {
+  const lo = Math.max(0, Math.floor((Math.min(...values, mean) - 3) / 5) * 5)
+  const hi = Math.min(100, Math.max(lo + 10, Math.ceil((Math.max(...values, mean) + 3) / 5) * 5))
+  const x = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`
   return (
-    <svg className="strip" viewBox="0 0 100 14" preserveAspectRatio="none" role="img" aria-label={label}>
-      <line x1="0" y1="7" x2="100" y2="7" stroke="var(--line)" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+    <div className="strip" role="img" aria-label={`${label}: ${values.map((v) => v.toFixed(1)).join(', ')} percent; average ${mean.toFixed(1)}`}>
+      <span className="strip-line" />
       {values.map((v, i) => (
-        <circle key={i} cx={x(v)} cy="7" r="2" fill={color} fillOpacity="0.55" />
+        <span key={i} className="strip-dot" style={{ left: x(v), background: color }} />
       ))}
-      <line x1={x(mean)} x2={x(mean)} y1="1" y2="13" stroke="var(--ink)" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
-    </svg>
+      <span className="strip-mean" style={{ left: x(mean) }} />
+      <span className="strip-end" style={{ left: 0 }}>{lo}%</span>
+      <span className="strip-end" style={{ right: 0 }}>{hi}%</span>
+    </div>
   )
 }

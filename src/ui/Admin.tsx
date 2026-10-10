@@ -309,7 +309,14 @@ function ResultCard({ m, reload }: { m: Market; reload: () => void }) {
       <Err>{a.error}</Err>
       {a.note && <p className="ok" role="status">{a.note}</p>}
       {!settled ? (
-        <button className="btn" disabled={a.busy || !ready || !source.trim()} onClick={() => a.run(enter)}>Review computed outcome</button>
+        <div className="row">
+          <button className="btn" disabled={a.busy || !ready || !source.trim()} onClick={() => a.run(enter)}>Review computed outcome</button>
+          <button className="btn ghost" disabled={a.busy} onClick={() => {
+            const why = prompt('Cancel this market and return every commitment? Reason (e.g. unresolved contest):')
+            if (!why) return
+            a.run(async () => { await backend.rpc('cancel_market', { p_id: m.id, p_reason: why }); reload() })
+          }}>Cancel and refund</button>
+        </div>
       ) : (
         <button className="btn danger" disabled={a.busy || !ready || !source.trim() || !reason.trim()} onClick={() => {
           if (!confirm('Recalculate this settlement? Balances update; recorded transfers are kept and the change is logged.')) return
