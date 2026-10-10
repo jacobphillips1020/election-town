@@ -619,3 +619,16 @@ describe('open sign-up', () => {
     expect((await rpc<{ is_member: boolean }>(db, id(21), 'get_me')).is_member).toBe(true)
   })
 })
+
+describe('leftover proposals', () => {
+  test('markets from the old propose step open on the defaults, with names from the board', async () => {
+    const mid = await proposedMarket('house', 'NY', '17', [{ id: 'c1', name: 'Democratic nominee (to be confirmed)', party: 'D' }, { id: 'c2', name: 'Republican nominee (to be confirmed)', party: 'R' }])
+    await boardNames('house:NY:17:0', 'Pat Example', 'Lee Sample')
+    const fix = MIGRATIONS[MIGRATIONS.length - 1]
+    expect(fix).toMatch(/old two-step/)
+    await db.exec(fix)
+    const m = (await rpc<Record<string, any>[]>(db, U.maya, 'list_markets')).find((x) => x.id === mid)!
+    expect(m).toMatchObject({ phase: 'open', buy_in_cents: 1000 })
+    expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
+  })
+})
