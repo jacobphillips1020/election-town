@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppProvider, useApp } from './data/context'
 import { rememberDestination } from './lib'
@@ -10,6 +10,8 @@ import { MarketPage } from './ui/MarketDetail'
 import { ProposePage } from './ui/Propose'
 import { MyEntriesPage } from './ui/MyEntries'
 import { AdminPage } from './ui/Admin'
+
+const DevBoard = import.meta.env.DEV ? lazy(() => import('./ui/DevBoard')) : null
 
 export function App() {
   return (
@@ -117,6 +119,7 @@ function Shell() {
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/join/:token" element={<JoinPage />} />
+          {DevBoard && <Route path="/dev/board" element={<Suspense fallback={null}><DevBoard /></Suspense>} />}
           <Route path="/" element={<Gate><MarketsPage /></Gate>} />
           <Route path="/m/:id" element={<Gate><MarketPage /></Gate>} />
           <Route path="/propose" element={<Gate><ProposePage /></Gate>} />

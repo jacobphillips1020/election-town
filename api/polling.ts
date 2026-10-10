@@ -2,12 +2,15 @@
 // POLLINGSOURCE_DISABLED=true to switch it off.
 //   { action: "lookup",  race: {race_type,state,district,special} }  -> current average (preview on the propose form)
 //   { action: "refresh", market_id }                                 -> stores a snapshot, at most every 6 hours per race
+//   { action: "board" }                                             -> refreshes the race board, at most every 12 hours
 // A refresh writes one snapshot row that every member reads, so the vendor sees a handful of requests a day.
 // Storing needs SUPABASE_SERVICE_ROLE_KEY (server env only, never a VITE_ variable).
 import { createClient } from '@supabase/supabase-js'
 import type { PollingRef } from '../src/domain/states.js'
 import { RaceMismatch, fetchRace } from '../src/polling/pollingsource.js'
 import { REFRESH_MS, refreshSnapshot, type Cand } from '../src/polling/refresh.js'
+import { refreshBoard } from '../src/polling/board.js'
+import { boardDeps } from './_board.js'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -39,6 +42,13 @@ export default {
         const snapshot = await fetchRace(body.race)
         lookupCache.set(key, { at: Date.now(), value: snapshot })
         return json({ status: snapshot ? 'ok' : 'no-average', snapshot })
+      }
+
+      if (body.action === 'board') {
+        const service = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (!service) return json({ status: 'not-configured' })
+        const db = createClient(url, service, { auth: { persistSession: false } })
+        return json(await refreshBoard(boardDeps(db)))
       }
 
       if (body.action === 'refresh' && body.market_id) {

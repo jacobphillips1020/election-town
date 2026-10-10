@@ -37,23 +37,28 @@ export function findRace(ref: { race_type: string; state: string; district: stri
   return RACES.find((r) => r.kind === ref.race_type && r.state === ref.state && r.district === ref.district && r.special === ref.special)
 }
 
-/** Races whose state/district/type words all match the query ("utah 2", "oh senate", "ak gov"). */
-export function searchRaces(query: string, limit = 12): RaceEntry[] {
+type RaceLike = Pick<RaceEntry, 'kind' | 'state' | 'district' | 'special'>
+
+function raceWords(r: RaceLike): string[] {
+  const w = [...stateName(r.state).toLowerCase().split(' '), r.state.toLowerCase()]
+  if (r.kind === 'senate') w.push('senate', 'senator')
+  if (r.kind === 'governor') w.push('governor', 'gov', 'governors')
+  if (r.kind === 'house') w.push('house', 'district', 'congress', r.district === 'AL' ? 'at-large' : String(parseInt(r.district ?? '0', 10)), r.district ?? '')
+  if (r.special) w.push('special')
+  return w
+}
+
+/** True when every word of the query matches the race ("utah 2", "oh senate", "ak gov"). */
+export function matchesQuery(r: RaceLike, query: string): boolean {
   const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
-  if (tokens.length === 0) return []
-  const words = (r: RaceEntry): string[] => {
-    const w = [...stateName(r.state).toLowerCase().split(' '), r.state.toLowerCase()]
-    if (r.kind === 'senate') w.push('senate', 'senator')
-    if (r.kind === 'governor') w.push('governor', 'gov', 'governors')
-    if (r.kind === 'house') w.push('house', 'district', 'congress', r.district === 'AL' ? 'at-large' : String(parseInt(r.district ?? '0', 10)), r.district ?? '')
-    if (r.special) w.push('special')
-    return w
-  }
-  const hits = RACES.filter((r) => {
-    const w = words(r)
-    return tokens.every((t) => w.some((x) => (/^\d+$/.test(t) ? x === t || x === t.padStart(2, '0') : x.startsWith(t))))
-  })
-  return hits.slice(0, limit)
+  if (tokens.length === 0) return true
+  const w = raceWords(r)
+  return tokens.every((t) => w.some((x) => (/^\d+$/.test(t) ? x === t || x === t.padStart(2, '0') : x.startsWith(t))))
+}
+
+export function searchRaces(query: string, limit = 12): RaceEntry[] {
+  if (!query.trim()) return []
+  return RACES.filter((r) => matchesQuery(r, query)).slice(0, limit)
 }
 
 /** Mirrors propose_race(): states whose general election can be decided in a later round. */

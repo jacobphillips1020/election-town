@@ -1,5 +1,8 @@
 {
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "crons": [{ "path": "/api/polling-cron", "schedule": "0 10 * * *" }],
-  "functions": { "api/polling-cron.ts": { "maxDuration": 60 } }
+  "functions": {
+    "api/polling.ts": { "maxDuration": 60 },
+    "api/polling-cron.ts": { "maxDuration": 60 }
+  }
 }

@@ -22,3 +22,4 @@ export type Lookup = { status: 'ok' | 'no-average' | 'disabled' | 'mismatch' | '
 
 export const lookupRace = (b: Backend, race: PollingRef) => post<Lookup>(b, { action: 'lookup', race })
 export const refreshMarket = (b: Backend, market_id: string) => post<{ status: string }>(b, { action: 'refresh', market_id })
+export const refreshBoardApi = (b: Backend) => post<{ status: string }>(b, { action: 'board' })
