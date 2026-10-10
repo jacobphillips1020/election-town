@@ -15,6 +15,7 @@ import { refreshBoardApi } from '../polling/client'
 import { Balance } from './Balance'
 import { currentDraft, pickedSides } from './Ballot'
 import { Err, Loading } from './common'
+import { Invite, PayNote } from './Invite'
 import { Experts, Links, RatingChip } from './Pick'
 import { MapLegend, TileMap, type Tile } from './TileMap'
 
@@ -35,7 +36,10 @@ export function HomePage() {
 
 function Dashboard({ pool }: { pool: Pool }) {
   const { uid } = useApp()
-  const mine = useMemo<Draft | null>(() => currentDraft(uid, pool.my_updated_at)?.draft ?? (pool.my_ballot ? draftFromBallot(pool.my_ballot) : null), [uid, pool.my_ballot, pool.my_updated_at])
+  const mine = useMemo<Draft | null>(() => {
+    const d = currentDraft(uid, pool.my_updated_at)?.draft ?? (pool.my_ballot ? draftFromBallot(pool.my_ballot) : null)
+    return d && Object.values(d).some((p) => p.winner || (p.r ?? '').trim()) ? d : null // nothing picked yet: no "You"
+  }, [uid, pool.my_ballot, pool.my_updated_at])
   const submitted = !!pool.my_ballot && Object.keys(pool.my_ballot).length > 0
   const [mode, setMode] = useState<Mode>(pool.closed ? 'group' : 'polls')
   const [sel, setSel] = useState<string | null>(null)
@@ -56,6 +60,7 @@ function Dashboard({ pool }: { pool: Pool }) {
   return (
     <main className="page wide" id="main">
       <Hero pool={pool} submitted={submitted} />
+      {!pool.closed && <Invite pool={pool} submitted={submitted} compact />}
 
       <section className="section" aria-labelledby="senate-h">
         <div className="sec-head">
@@ -145,6 +150,7 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
             {!submitted ? 'Submit what you have and come back to finish or change it any time before the close.'
               : blank ? `You're in. ${blank} ${blank === 1 ? 'pick is' : 'picks are'} still blank; fill ${blank === 1 ? 'it' : 'them'} in any time before the close.`
               : "You're in. Change any pick until the close."}
+            {submitted && pool.pay_note && <> <span className="hero-pay">Payment: <PayNote text={pool.pay_note} /></span></>}
           </p>
         </div>
       )}

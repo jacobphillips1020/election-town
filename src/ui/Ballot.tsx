@@ -8,6 +8,7 @@ import { formatET, usd } from '../domain/format'
 import { RATINGS_LINKS, buildBallot, checkPick, draftFromBallot, isBlank, raceLinks, sideOf, type Draft, type Pool, type PoolMarket } from '../domain/pool'
 import { HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, senateKey, senateR, type Side } from '../domain/senate'
 import { Err, Loading } from './common'
+import { Invite, PayNote } from './Invite'
 import { Experts, Links, RacePick, RatingChip, SeatPick } from './Pick'
 import { Balance } from './Balance'
 
@@ -80,7 +81,9 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   const count = pool.markets.filter((m) => m.phase === 'open').length
   const made = count - problems.length - skipped.length
 
-  useEffect(() => { if (open) saveLocal(uid, dirty ? draft : null) }, [draft, dirty, open, uid])
+  // Keep a draft only once something has actually been picked.
+  const anyPick = Object.values(draft).some((p) => p.winner || (p.r ?? '').trim())
+  useEffect(() => { if (open) saveLocal(uid, dirty && anyPick ? draft : null) }, [draft, dirty, anyPick, open, uid])
 
   const set = (id: string, v: Draft[string]) => { setDone(false); setDraft((d) => ({ ...d, [id]: v })) }
 
@@ -148,13 +151,14 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
           <strong>Ballot in. </strong>
           {skipped.length > 0 ? <>{skipped.length} still blank; come back and fill {skipped.length === 1 ? 'it' : 'them'} in any time. </> : null}
           You can change any pick until {formatET(pool.deadline)}; just come back to My Ballot.{' '}
-          {pool.pay_note ? <>Next: {pool.pay_note}</> : <>Pay {admin} {usd(pool.ballot_cents)} before the pool closes.</>}
+          {pool.pay_note ? <>Next: <PayNote text={pool.pay_note} /></> : <>Pay {admin} {usd(pool.ballot_cents)} before the pool closes.</>}
           <div className="row" style={{ marginTop: 8 }}>
             <Link className="btn" to="/card">Share my picks</Link>
             <Link className="btn ghost" to="/">See the pool</Link>
           </div>
         </div>
       )}
+      {done && <Invite pool={pool} submitted />}
       {!done && submitted && !dirty && open && (
         <p className="callout" role="status">
           Submitted{pool.my_updated_at && ` ${new Date(pool.my_updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}.
