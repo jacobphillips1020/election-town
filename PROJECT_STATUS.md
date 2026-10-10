@@ -6,7 +6,7 @@ Supabase (Auth + Postgres with row-level security) for the live version. Last up
 **State (2026-10-09): built and tested (53 tests). Private GitHub repo: jacobphillips1020/election-town. Supabase project
 `election-town` (us-east-1) created, migrations applied, Confirm email OFF, admin bootstrapped. Runs locally against the
 live project (`.env.local`, git-ignored). **Deployed: https://election-town.vercel.app** (Vercel Hobby, auto-deploys on
-push to `main`; env: the two VITE_ vars only). Polling lookup is OFF (needs `POLLINGSOURCE_ENABLED=true`).**
+push to `main`). Polling is ON by default (kill switch: `POLLINGSOURCE_DISABLED=true`); storing snapshots needs `SUPABASE_SERVICE_ROLE_KEY` in Vercel.**
 
 ## What exists
 
@@ -16,8 +16,8 @@ push to `main`; env: the two VITE_ vars only). Polling lookup is OFF (needs `POL
   Admin (proposals, markets, results/settlement/corrections, ledger + CSV, members + phone numbers, group defaults, invites).
 - Demo mode (no env vars): the real migrations run in an in-browser Postgres (PGlite) with fictional fixtures
   (`src/demo/seed.sql`). Yellow bar says so. It is not a multiuser service.
-- `api/polling.ts` + `src/polling/pollingsource.ts`: server-side race lookup/refresh, 6 h cache, members only,
-  **off** unless `POLLINGSOURCE_ENABLED=true`. Parser tested against the documented response shape.
+- `api/polling.ts` + `src/polling/{pollingsource,refresh}.ts`: server-side race lookup/refresh, 6 h cache, members only,
+  on by default. A race with no published average is stored as an explicit "none yet" snapshot (no re-polling).
 
 ## Decisions
 
@@ -54,8 +54,9 @@ push to `main`; env: the two VITE_ vars only). Polling lookup is OFF (needs `POL
 1. On the live site: Admin → Group → create an invitation link (it will use the live address), text it to one friend,
    confirm they appear under Members with their phone number.
 2. Create the real races (members propose; admin approves in Admin → Proposals). Deadlines default to Nov 2, 8:00 p.m. ET.
-3. Polling (do before Nov 2): in Vercel add `POLLINGSOURCE_ENABLED=true` and `SUPABASE_SERVICE_ROLE_KEY` (copy from
-   Supabase → Project Settings → API; Vercel only, never git or a VITE_ variable), then redeploy.
+3. Polling: add `SUPABASE_SERVICE_ROLE_KEY` in Vercel (Supabase → Project Settings → API; Vercel only, never git or a
+   VITE_ variable), then redeploy. Polling for a race is fetched and stored the moment it is proposed, and refreshed
+   at most every 6 hours when someone opens it.
 4. Optional: courtesy email to PollingSource.
 
 ## Not verified (could not run here)

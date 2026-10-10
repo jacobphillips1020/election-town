@@ -5,10 +5,10 @@
 //   -> { race: { race_type, state, district, is_special, dem_average, rep_average, poll_count,
 //                last_poll_date, page, ... }, recent_polls: { polls: [{ dem_candidate, rep_candidate, ... }] }, attribution }
 // The averages are Democratic and Republican only. Averages are null when a race has no polls yet.
-// Not established with the vendor: whether automated use / caching is permitted. Hence the
-// POLLINGSOURCE_ENABLED switch in api/polling.ts, which ships OFF.
+// Not established with the vendor in writing: whether automated use / caching is permitted. Usage is kept
+// small (one request per race per 6 hours, cached for everyone) and api/polling.ts has a kill switch.
 
-import type { PollingRef } from '../domain/states'
+import type { PollingRef } from '../domain/states.js'
 
 export class RaceMismatch extends Error {}
 

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAdminName, useApp, useRpc } from '../data/context'
 import { stateName, suggestTitle } from '../domain/states'
 import type { Basis, Market } from '../domain/types'
+import { refreshMarket } from '../polling/client'
 import { Err } from './common'
 import { EMPTY_REF, LookupPreview, RaceLinkFields, toRef } from './RaceLink'
 
@@ -47,6 +48,8 @@ export function ProposePage() {
         p_candidates: rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), party: r.party })),
         p_has_other: hasOther, p_basis: basis, p_note: note.trim(), p_polling_ref: ref,
       })
+      // Polling starts the moment a race is proposed (bounded wait; the page also retries on open).
+      await Promise.race([refreshMarket(backend, id), new Promise((r) => setTimeout(r, 6000))])
       nav(`/m/${id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the proposal.')

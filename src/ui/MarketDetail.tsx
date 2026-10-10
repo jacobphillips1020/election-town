@@ -115,6 +115,17 @@ function snapshotSource(s: PollSnapshot) {
 function Snapshot({ s, markStale }: { s: PollSnapshot; markStale: boolean }) {
   const ageDays = (Date.now() - new Date(s.as_of + 'T12:00:00Z').getTime()) / 86400e3
   const stale = markStale && ageDays > 14
+  if (s.data.candidates.length === 0) {
+    return (
+      <div className="panel">
+        <p style={{ margin: 0 }}>No polling average has been published for this race yet.</p>
+        <p className="hint" style={{ margin: 0 }}>
+          Checked {s.as_of} · {snapshotSource(s)}
+          {s.source_url && <> · <a href={s.source_url} target="_blank" rel="noreferrer">Race page</a></>}
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="panel">
       <p className="small muted" style={{ margin: 0 }}>
