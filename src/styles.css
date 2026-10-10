@@ -276,10 +276,6 @@ table.t td.num, table.t th.num { text-align: right; }
 .invite .btn.ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.6); }
 .invite .btn.ghost:hover { background: rgba(255,255,255,.1); }
 .invite .ok { color: #9fe0b6; flex-basis: 100%; }
-.invite-preview { flex-basis: 100%; font-size: .82rem; }
-.invite-preview summary { cursor: pointer; color: #f3d77a; }
-.invite-preview p { margin-top: 6px; background: rgba(255,255,255,.08); padding: 8px 10px; border-radius: 4px; color: #fff; }
-.invite-preview .muted { color: #b9c3d9; }
 @media (max-width: 34rem) { .invite-actions .btn { flex: 1 1 auto; } }
 @media (max-width: 34rem) {
   .hero { grid-template-columns: 1fr; }

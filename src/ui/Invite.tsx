@@ -46,10 +46,6 @@ export function Invite({ pool, submitted, compact = false }: { pool: Pool; submi
         <button type="button" className="btn ghost" onClick={copy}>Copy</button>
       </div>
       {msg && <p className="small ok" role="status" style={{ margin: 0 }}>{msg}</p>}
-      <details className="invite-preview">
-        <summary>What they&rsquo;ll get</summary>
-        <p>{text} <span className="muted">{url}</span></p>
-      </details>
     </section>
   )
 }
