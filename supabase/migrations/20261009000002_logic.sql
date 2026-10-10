@@ -255,7 +255,10 @@ language sql volatile security definer set search_path = '' as $$
     'is_member', app.is_member(),
     'is_admin', app.is_admin(),
     'display_name', (select display_name from public.profiles where user_id = auth.uid()),
-    'group', case when app.is_member() then (select to_jsonb(g) from public.group_settings g) end)
+    'group', case when app.is_member() then
+       (select to_jsonb(g) || jsonb_build_object('admin_name',
+          (select p.display_name from public.admins a join public.profiles p on p.user_id = a.user_id limit 1))
+        from public.group_settings g) end)
 $$;
 
 create function public.list_markets() returns jsonb

@@ -148,12 +148,13 @@ describe('sealed picks', () => {
   test('admin ledger does not reveal who has entered before close', async () => {
     const mid = await openRace()
     await pick(U.maya, mid, 'c1', 520, 480)
+    await pick(U.dev, mid, 'c2', 400, 600)
     const led = await rpc<{ people: { display_name: string }[]; breakdown: unknown[] }>(db, U.jake, 'admin_ledger')
     expect(led.people).toEqual([])
     expect(led.breakdown).toEqual([])
     await backdate(mid)
     const after = await rpc<{ people: { display_name: string; unresolved_cents: number }[] }>(db, U.jake, 'admin_ledger')
-    expect(after.people.map((p) => [p.display_name, p.unresolved_cents])).toEqual([['Maya', 1000]])
+    expect(after.people.map((p) => [p.display_name, p.unresolved_cents])).toEqual([['Dev', 1000], ['Maya', 1000]])
   })
 
   test('after close all members see everyone\'s picks and names; non-members still nothing', async () => {
@@ -286,8 +287,8 @@ describe('scoring', () => {
   test('winner first, then closest share; wrong winner is never competitive', async () => {
     const mid = await openRace()
     await pick(U.maya, mid, 'c1', 518, 482) // right winner, err 3
-    await pick(U.dev, mid, 'c1', 560, 440)  // right winner, err 39
-    await pick(U.priya, mid, 'c2', 521, 479) // wrong winner (c2 share 52.1% but c2 lost)
+    await pick(U.dev, mid, 'c1', 560, 440)  // right winner, err 45
+    await pick(U.priya, mid, 'c2', 479, 521) // wrong winner, even though 52.1% is near the real 51.5%
     await settleRace(mid, 'c1', 515)
     const p = await payoutsFor(mid)
     const by = Object.fromEntries(p.map((x) => [x.user_id, x]))
@@ -298,7 +299,6 @@ describe('scoring', () => {
 
   test('exact ties split the whole pool and conserve every cent', async () => {
     const mid = await openRace({ buyIn: 1000 })
-    await pick(U.maya, mid, 'c1', 500, 500 - 0, 0).catch(() => null) // tie share -> rejected, ignored
     await pick(U.maya, mid, 'c1', 520, 480)  // err 10 vs 51.0
     await pick(U.dev, mid, 'c1', 500, 400, 100) // err 10
     await pick(U.priya, mid, 'c1', 520, 380, 100) // err 10
@@ -318,7 +318,6 @@ describe('scoring', () => {
     await pick(U.dev, mid, 'c1', 520, 480)
     await pick(U.priya, mid, 'c1', 520, 480)
     await pick(U.alex, mid, 'c2', 300, 700)
-    await db.exec(`update public.entries set id = '00000000-0000-0000-0000-0000000000a${'1'}' where user_id = '${U.priya}'`).catch(() => null)
     await settleRace(mid, 'c1', 520)
     const ids = (await db.query<{ id: string; user_id: string }>(`select id, user_id from public.entries where market_id = $1`, [mid])).rows
     const p = await payoutsFor(mid)
@@ -400,29 +399,6 @@ describe('settlement and ledger', () => {
     expect(prev.rows.map((r) => [r.display_name, r.gross_cents])).toEqual([['Dev', 0], ['Maya', 2000]])
     expect((await db.query(`select count(*)::int c from public.payouts`)).rows[0]).toEqual({ c: 0 })
   })
-
-  test('balance formula: wins, losses, refunds, prepayment, and unresolved commitments', async () => {
-    // Maya enters three resolved markets ($30), wins a five-way pool ($50) and loses two.
-    const a = await openRace(); const b = await openRace(); const c = await openRace()
-    for (const who of [U.maya, U.dev, U.priya, U.alex, U.jake]) await pick(who, a, 'c1', 520, 480)
-    await pick(U.maya, b, 'c2', 400, 600); await pick(U.dev, b, 'c1', 550, 450)
-    await pick(U.maya, c, 'c2', 400, 600); await pick(U.dev, c, 'c1', 550, 450)
-    const open = await openRace() // still open: must not count as a loss
-    await pick(U.maya, open, 'c1', 520, 480)
-    await settleRace(a, 'c1', 520); await settleRace(b, 'c1', 550); await settleRace(c, 'c1', 550)
-
-    let mine = await rpc<{ totals: Record<string, number> }>(db, U.maya, 'my_ledger')
-    // a: five entrants, exact ties on the same pick -> five-way split of $50 = $10 each; make it a Maya win instead
-    expect(mine.totals.unresolved_cents).toBe(1000)
-    expect(mine.totals.committed_cents).toBe(3000)
-
-    // Direct example from the spec, verified through the real formula:
-    // committed 3000 - gross 5000 - refunds 0 - collected 0 + paid 0 = -2000
-    await db.exec(`set session_replication_role = replica;
-      update public.payouts set gross_cents = 0, refund_cents = 0;
-      update public.payouts set gross_cents = 5000 where user_id = '${U.maya}' and market_id = '${a}';
-      set session_replication_role = origin;`).catch(() => null)
-  })
 })
 
 describe('settlement accounting (spec example)', () => {
@@ -493,6 +469,7 @@ describe('polling snapshots', () => {
   test('closing snapshot is the latest one captured before the deadline', async () => {
     const mid = await openRace()
     await rpc(db, U.jake, 'record_polling', { p_market: mid, p_source_name: 'Manual', p_source_url: 'https://example.test/poll', p_as_of: '2026-10-01', p_data: { candidates: [{ name: 'Garcia', party: 'D', pct: 48 }, { name: 'Whitfield', party: 'R', pct: 45 }], undecided: 7 } })
+    await db.exec(`update public.polling_snapshots set fetched_at = clock_timestamp() - interval '1 hour'`)
     await backdate(mid)
     await rpc(db, U.jake, 'record_polling', { p_market: mid, p_source_name: 'Manual', p_source_url: null, p_as_of: '2026-11-04', p_data: { candidates: [{ name: 'Garcia', party: 'D', pct: 52 }] } })
     const m = await rpc<{ polling: { latest: { as_of: string }; at_close: { as_of: string; data: { undecided: number } } } }>(db, U.maya, 'get_market', { p_id: mid })
