@@ -3,7 +3,8 @@
 //   a seat count: Republican seats, with a slider and a number box.
 import type { BoardPolling } from '../domain/board'
 import { lastName, ratingTone } from '../domain/board'
-import { expertShort, sideOf, twoWay, winsBy, type Expert, type PickDraft } from '../domain/pool'
+import type { CSSProperties } from 'react'
+import { expertShort, inkFor, leanColor, seatLean, shareLean, sideOf, twoWay, winsBy, type Expert, type PickDraft } from '../domain/pool'
 import type { Market } from '../domain/types'
 
 export function RatingChip({ rating, prefix }: { rating: string; prefix?: string }) {
@@ -44,6 +45,9 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
   const polls = twoWay(m, polling)
   const w = m.candidates.find((c) => c.id === value?.winner)
   const share = parseFloat(value?.share ?? '')
+  // The share box takes the winner's color, deeper the bigger the win (pale near 50%).
+  const ws = w ? sideOf(w) : null
+  const boxBg = ws && Number.isFinite(share) && share > 50 ? leanColor(ws === 'R' ? shareLean(share) : -shareLean(share), ws === 'I' ? 'I' : 'D') : null
   const choose = (id: string) => {
     if (disabled) return
     const p = polls?.[id]
@@ -77,6 +81,7 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
             <button type="button" className="btn ghost step" disabled={disabled} aria-label="Lower by 0.5" onClick={() => onChange({ ...value, share: step(value?.share, -0.5) })}>−</button>
             <span className="share-box">
               <input id={`share-${m.id}`} inputMode="decimal" value={value?.share ?? ''} disabled={disabled}
+                style={boxBg ? { background: boxBg, color: inkFor(boxBg), borderColor: boxBg } : undefined}
                 onChange={(e) => onChange({ ...value, share: e.target.value })} />
               <span>%</span>
             </span>
@@ -91,22 +96,44 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
   )
 }
 
-export function SeatPick({ id, total, value, onChange, min, max, disabled }: {
-  id: string; total: number; value: string | undefined; onChange: (r: string) => void; min: number; max: number; disabled?: boolean
+const CHAMBER = {
+  senate: { total: 100, control: 50, full: 8 },
+  house: { total: 435, control: 218, full: 30 },
+} as const
+
+/**
+ * Republican seats as a tug-of-war: the track runs from deep blue through a neutral tan at the control line to
+ * deep red, and the handle takes the color of wherever you land. No words; the color is the read-out.
+ */
+export function SeatPick({ id, chamber, value, onChange, min, max, disabled }: {
+  id: string; chamber: keyof typeof CHAMBER; value: string | undefined; onChange: (r: string) => void; min: number; max: number; disabled?: boolean
 }) {
-  const n = /^\d{1,3}$/.test(value ?? '') ? +value! : null
+  const c = CHAMBER[chamber]
+  const n = /^\d{1,3}$/.test(value ?? '') && +value! <= c.total ? +value! : null
+  const at = (v: number) => leanColor(seatLean(v, c.control, c.full))
+  const track = `linear-gradient(90deg, ${Array.from({ length: 13 }, (_, i) => {
+    const v = min + ((max - min) * i) / 12
+    return `${at(v)} ${((i / 12) * 100).toFixed(1)}%`
+  }).join(', ')})`
+  const lean = n === null ? '#9a937f' : at(n)
+  const linePct = ((c.control - 0.5 - min) / (max - min)) * 100
+  const style = { '--track': track, '--lean': lean } as CSSProperties
   return (
-    <div className="seatpick">
+    <div className="seatpick" style={style}>
       <div className="seat-nums">
-        <span className="seat-other"><b>{n === null ? '–' : total - n}</b> Dem + Ind</span>
+        <span className="seat-other"><b>{n === null ? '–' : c.total - n}</b> Dem + Ind</span>
         <span className="seat-r">
           <label htmlFor={`seats-${id}`} className="sr-only">Republican seats</label>
           <input id={`seats-${id}`} inputMode="numeric" value={value ?? ''} disabled={disabled} onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 3))} />
           <span>Rep</span>
         </span>
       </div>
-      <input type="range" min={min} max={max} step={1} value={n ?? Math.round((min + max) / 2)} disabled={disabled}
-        aria-label="Republican seats" className="seat-range" onChange={(e) => onChange(e.target.value)} />
+      <div className="seat-track">
+        <input type="range" min={min} max={max} step={1} value={n ?? Math.round(c.control - 0.5)} disabled={disabled}
+          aria-label="Republican seats" aria-valuetext={n === null ? 'Not set' : `${n} Republican seats`}
+          className={`seat-range${n === null ? ' unset' : ''}`} onChange={(e) => onChange(e.target.value)} />
+        <span className="seat-line" style={{ left: `calc(15px + (100% - 30px) * ${(linePct / 100).toFixed(4)})` }} aria-hidden="true" />
+      </div>
     </div>
   )
 }

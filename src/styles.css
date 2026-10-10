@@ -395,8 +395,28 @@ table.grid .seat-row td { color: var(--ink); background: #f1ece0; }
 .seat-nums b { font-size: 1.4rem; }
 .seat-other { color: var(--dem); }
 .seat-r { display: inline-flex; align-items: center; gap: 6px; color: var(--rep); font-weight: 700; }
-.seat-r input { width: 4.6rem; text-align: center; font-size: 1.3rem; font-weight: 800; color: var(--rep); }
-.seat-range { width: 100%; min-height: 32px; accent-color: var(--rep); }
+.seat-r input { width: 4.6rem; text-align: center; font-size: 1.3rem; font-weight: 800; color: var(--rep); border: 2px solid var(--lean); }
+
+/* the tug-of-war slider: blue -> neutral at the control line -> red; the handle wears the color where it lands */
+.seat-track { position: relative; margin: 18px 0 14px; }
+.seat-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 14px; min-height: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 999px; background: var(--track); cursor: pointer; box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+.seat-range:disabled { cursor: default; opacity: .7; }
+.seat-range::-webkit-slider-runnable-track { height: 14px; background: transparent; border-radius: 999px; }
+.seat-range::-moz-range-track { height: 14px; background: transparent; border: 0; }
+.seat-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 30px; height: 30px; margin-top: -8px;
+  border-radius: 50%; background: var(--lean); border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.2);
+  transition: background .12s, transform .12s; }
+.seat-range::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--lean); border: 3px solid #fff;
+  box-shadow: 0 1px 5px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.2); }
+.seat-range:active::-webkit-slider-thumb { transform: scale(1.12); }
+.seat-range:focus { outline: none; }
+.seat-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--focus), 0 1px 5px rgba(0,0,0,.35); }
+.seat-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--focus); }
+.seat-range.unset::-webkit-slider-thumb { background: #fff; border-color: #9a937f; }
+.seat-range.unset::-moz-range-thumb { background: #fff; border-color: #9a937f; }
+.seat-line { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ink); opacity: .55; pointer-events: none; border-radius: 1px; }
+.share-box input { transition: background .15s, color .15s; }
 .submitbar { position: sticky; bottom: 0; z-index: 5; margin: 16px -16px 0; background: rgba(250,247,240,.96); border-top: 1px solid var(--line); backdrop-filter: blur(4px); }
 .submitbar-in { max-width: var(--max); margin: 0 auto; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; }
 .submitbar .err { flex-basis: 100%; order: 3; margin: 0; font-size: .85rem; }

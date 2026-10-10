@@ -225,7 +225,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
                 ? <> · <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>use {implied}</button></>
                 : <> (31 not up this year, the other races as polled, plus your {races.length}). Set your own number if you think otherwise.</>}
             </p>
-            <SeatPick id={seatSen.id} total={100} min={35} max={65} disabled={!open} value={effective[seatSen.id]?.r}
+            <SeatPick id={seatSen.id} chamber="senate" min={35} max={65} disabled={!open} value={effective[seatSen.id]?.r}
               onChange={(r) => set(seatSen.id, { r, touched: true })} />
             <Balance total={100} line={50} lineLabel="50 keeps R control" rows={[
               { label: 'Now', r: SENATE_NOW_R },
@@ -242,7 +242,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
               Republicans won {HOUSE_2024_R} in 2024; {HOUSE_MAJORITY} is a majority.
               {house?.r_median != null && <> Betting markets put them near <b>{Math.round(house.r_median)}</b>.</>}
             </p>
-            <SeatPick id={seatHouse.id} total={435} min={170} max={260} disabled={!open} value={effective[seatHouse.id]?.r}
+            <SeatPick id={seatHouse.id} chamber="house" min={170} max={260} disabled={!open} value={effective[seatHouse.id]?.r}
               onChange={(r) => set(seatHouse.id, { r, touched: true })} />
             {open && !isBlank(seatHouse, effective[seatHouse.id]) && <button type="button" className="linklike small" onClick={() => set(seatHouse.id, { r: '', touched: true })}>Clear pick</button>}
             <Balance total={435} line={HOUSE_MAJORITY} lineLabel="218 for a majority" rows={[

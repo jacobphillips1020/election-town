@@ -127,6 +127,38 @@ export const PALETTE: Record<Side, [string, string, string]> = {
 export const TOSSUP = '#d8cdaa'
 export const NO_RACE = '#ebe6d9'
 
+// ---------------------------------------------------------------- continuous lean (sliders, share boxes)
+
+const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16))
+const mix = (a: string, b: string, f: number) =>
+  '#' + hex(a).map((x, i) => Math.round(x + (hex(b)[i] - x) * f).toString(16).padStart(2, '0')).join('')
+
+/**
+ * A color for how partisan a call is. lean runs from -1 (as Democratic as it gets) through 0 (neutral, the
+ * toss-up tan) to +1 (as Republican as it gets); `left` picks the non-Republican palette (Nebraska: independent).
+ */
+export function leanColor(lean: number, left: Side = 'D'): string {
+  const x = Math.max(-1, Math.min(1, lean))
+  const stops = [TOSSUP, ...PALETTE[x < 0 ? left : 'R']]
+  const pos = Math.abs(x) * (stops.length - 1)
+  const i = Math.min(Math.floor(pos), stops.length - 2)
+  return mix(stops[i], stops[i + 1], pos - i)
+}
+
+/** White or ink text, whichever reads on this background. */
+export function inkFor(bg: string): string {
+  const [r, g, b] = hex(bg).map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4 })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.33 ? '#ffffff' : '#16181d'
+}
+
+/** Seat pick -> lean: 0 right at the control line, full color this many seats past it. */
+export function seatLean(r: number, control: number, full: number): number {
+  return (r - (control - 0.5)) / full
+}
+
+/** Two-way share for one side -> lean toward that side: 50% is neutral, a 16-point win is full color. */
+export const shareLean = (sharePct: number) => Math.max(0, Math.min(1, (2 * sharePct - 100) / 16))
+
 /** level 0 = toss-up, 1 lean, 2 likely, 3 solid */
 export function tone(side: Side | null, level: number): string {
   if (!side || level <= 0) return TOSSUP
