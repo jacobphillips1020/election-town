@@ -3,8 +3,8 @@
 //   { action: "refresh", market_id }                                 -> stores a provider snapshot if the last one is >6h old
 // Results are cached for everyone: a refresh writes one snapshot row that all members read.
 import { createClient } from '@supabase/supabase-js'
-import type { PollingRef } from '../src/domain/states'
-import { RaceMismatch, fetchRace } from '../src/polling/pollingsource'
+import type { PollingRef } from '../src/domain/states.js'
+import { RaceMismatch, fetchRace } from '../src/polling/pollingsource.js'
 
 const REFRESH_MS = 6 * 3600e3
 const json = (body: unknown, status = 200) =>
