@@ -146,7 +146,7 @@ table.t td.num, table.t th.num { text-align: right; }
 .board-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .board-row { border-bottom: 1px solid var(--line); }
 .board-row.open { background: var(--paper); }
-.board-hit { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; padding: 12px 4px; cursor: pointer; }
+.board-hit { display: block; width: 100%; text-align: left; font: inherit; color: inherit; background: none; border: 0; padding: 12px 4px; cursor: pointer; text-decoration: none; }
 .board-hit:hover { background: rgba(0,0,0,.025); }
 .board-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .board-title { font-weight: 700; letter-spacing: -0.005em; }
