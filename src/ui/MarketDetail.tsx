@@ -120,7 +120,7 @@ function Invite({ m }: { m: Market }) {
   const admin = useAdminName()
   const [msg, setMsg] = useState('')
   const url = `${window.location.origin}/m/${m.id}`
-  const text = `Side bet on ${m.title}: ${usd(m.buy_in_cents ?? 0)}, pick the winner and their vote share. Closes ${formatET(m.entry_deadline)}. Want in?`
+  const text = `🦅🇺🇸 Side bet on ${m.title}! ${usd(m.buy_in_cents ?? 0)} to call the winner and their vote share. Closes ${formatET(m.entry_deadline)}. Want in? 🇺🇸🦅🦅`
   async function go() {
     try {
       if (navigator.share) { await navigator.share({ title: m.title, text, url }); return }
