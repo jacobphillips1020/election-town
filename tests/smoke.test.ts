@@ -21,3 +21,25 @@ test('migrations load; markets are public, picks and people are not', async () =
   expect((await rpc<{ markets: unknown[] }>(db, null, 'get_pool')).markets).toHaveLength(12)
   await expect(select(db, null, 'select * from public.entries')).rejects.toThrow(/permission denied/i)
 })
+
+// Supabase runs API requests with pg-safeupdate: an UPDATE or DELETE without a WHERE clause is rejected, even inside a
+// function ("UPDATE requires a WHERE clause"). PGlite doesn't have that extension, so check every function's body here.
+test('no function updates or deletes without a WHERE clause (Supabase pg-safeupdate)', async () => {
+  const db = new PGlite()
+  await db.exec(AUTH_STUB)
+  for (const m of MIGRATIONS) await db.exec(m)
+  const fns = (await db.query<{ name: string; src: string }>(
+    `select n.nspname || '.' || p.proname as name, p.prosrc as src
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'app')`)).rows
+  const offenders: string[] = []
+  for (const f of fns) {
+    const body = f.src.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''")
+    for (const stmt of body.split(';')) {
+      const s = stmt.trim().replace(/\s+/g, ' ')
+      const m = s.match(/\b(update\s+\S+\s+(?:\w+\s+)?set\b|delete\s+from\b)[\s\S]*$/i)
+      if (m && !/\bwhere\b/i.test(m[0])) offenders.push(`${f.name}: ${m[0].slice(0, 80)}`)
+    }
+  }
+  expect(offenders).toEqual([])
+  expect(fns.length).toBeGreaterThan(40)
+})
