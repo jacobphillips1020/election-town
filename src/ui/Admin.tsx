@@ -532,7 +532,6 @@ function LedgerTab() {
 function PoolTab() {
   const { backend } = useApp()
   const pool = useRpc<Pool>('get_pool')
-  const who = useRpc<{ open_entrants: { market_id: string; names: string[] }[] }>('admin_ledger')
   const p = pool.data
   const race = p?.markets.find((m) => m.kind === 'senate')
   const seat = p?.markets.find((m) => m.kind === 'senate_seats')
@@ -549,14 +548,14 @@ function PoolTab() {
   const sc = dollarsToCents(seatStake || centsToDollars(seat?.buy_in_cents ?? 500))
   const races = p.markets.filter((m) => m.kind === 'senate').length
   const seats = p.markets.length - races
-  const names = who.data?.open_entrants.find((x) => x.market_id === race?.id)?.names ?? []
   return (
     <>
       <section>
         <h2>Closing time and stakes</h2>
         <p className="muted small">
           {p.ballots} {p.ballots === 1 ? 'ballot' : 'ballots'} in · {usd(p.pot_cents)} pot.
-          {names.length > 0 && <> Submitted: {names.join(', ')} <span className="muted">(picks stay sealed, even from you)</span>.</>}
+          {(p.admin_ballots?.length ?? 0) > 0 && <> Submitted: {p.admin_ballots!.map((b) => `${b.name} (${b.tier === 'half' ? usd(p.half_ballot_cents) : usd(p.ballot_cents)})`).join(', ')}
+            {' '}<span className="muted">(picks stay sealed, even from you)</span>.</>}
         </p>
         {p.closed ? <p className="callout">The pool closed {formatET(p.deadline)}. Enter results on the Results tab.</p> : (
           <>
@@ -568,7 +567,7 @@ function PoolTab() {
                 <input id="stake-race" inputMode="decimal" value={raceStake || centsToDollars(race?.buy_in_cents ?? 400)} onChange={(e) => setRaceStake(e.target.value)} />
                 <label htmlFor="stake-seat" style={{ marginTop: 8 }}>Stake per seat pick ($)</label>
                 <input id="stake-seat" inputMode="decimal" value={seatStake || centsToDollars(seat?.buy_in_cents ?? 500)} onChange={(e) => setSeatStake(e.target.value)} />
-                <p className="hint">Ballot = {races} × race + {seats} × seats = {rc !== null && sc !== null ? usd(races * rc + seats * sc) : '…'}. Ballots already in owe the new total.</p></div>
+                <p className="hint">Ballot = {races} × race + {seats} × seats = {rc !== null && sc !== null ? usd(races * rc + seats * sc) : '…'}; the smaller ballot is half that ({rc !== null && sc !== null ? usd((races * rc + seats * sc) / 2) : '…'}). Ballots already in owe the new total.</p></div>
             </div>
             <Err>{a.error}</Err>
             {a.note && <p className="ok" role="status">{a.note}</p>}

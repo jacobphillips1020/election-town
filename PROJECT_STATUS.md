@@ -18,7 +18,11 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
     (Republican seats, because Nebraska's contender Osborn is an independent: "Democratic seats" would be ambiguous.)
   - The Senate seat pick starts at what your race picks add up to (31 not up + other races as polled + your 10) and
     follows them until you set your own number.
-  - **Always $50 all in.** Any pick can be left blank: its stake still goes into that pot, but it can't win.
+  - **Two ballot sizes, $25 or $50** (switchable until close). Either way the buy-in is split across all 12 picks.
+    Each pick's pot pays out in two halves: the first half to the best call among everyone, the second half (paid in
+    only by $50 ballots) to the best call among $50 ballots (poker side-pot rule, in `app.compute_outcome`). A half
+    nobody called is refunded to the people who paid into it. Admin sees who chose which (never picks).
+  - **The buy-in covers every pick.** Any pick can be left blank: its stake still goes into that pot, but it can't win.
     Submit what you have (at least one pick) and finish or change it until the close; the UI says so everywhere.
   - Picks save in the browser as you go (per person; only used if newer than the submitted ballot). Submitting is
     all-or-nothing per save (`submit_ballot`). Visitors can fill it out before signing up; the draft survives sign-up.

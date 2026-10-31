@@ -135,7 +135,7 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
         <p className="hero-kicker">The 2026 Midterm Pool</p>
         <h1>{pool.closed ? 'Picks are in. Now we wait.' : 'Call the Senate. Call the House.'}</h1>
         <p className="hero-sub">
-          {pool.markets.length} picks · {usd(pool.ballot_cents)} a ballot ·{' '}
+          {pool.markets.length} picks · {usd(pool.half_ballot_cents)} or {usd(pool.ballot_cents)} a ballot ·{' '}
           {pool.closed ? `closed ${formatET(pool.deadline)}` : <>closes <strong>{formatET(pool.deadline)}</strong></>}
         </p>
       </div>
@@ -151,7 +151,7 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
             {!submitted ? 'Submit what you have and come back to finish or change it any time before the close.'
               : blank ? `You're in. ${blank} ${blank === 1 ? 'pick is' : 'picks are'} still blank; fill ${blank === 1 ? 'it' : 'them'} in any time before the close.`
               : "You're in. Change any pick until the close."}
-            {submitted && pool.pay_note && <> <span className="hero-pay">Payment: <PayNote text={pool.pay_note} /></span></>}
+            {submitted && pool.pay_note && <> <span className="hero-pay">Your buy-in: <b>{usd(pool.my_tier === 'half' ? pool.half_ballot_cents : pool.ballot_cents)}</b>. <PayNote text={pool.pay_note} /></span></>}
           </p>
         </div>
       )}
@@ -261,7 +261,7 @@ function RaceDetail({ row, m, pool, mine, onClose }: { row: SenateRow; m: PoolMa
       {m && (
         <>
           <p className="small" style={{ margin: '8px 0 4px' }}>
-            <b>{plural(m.entrants, 'pick')}</b> · <b>{usd(m.pool_cents)}</b> pot · {usd(m.buy_in_cents ?? 0)} a pick
+            <b>{plural(m.entrants, 'pick')}</b> · <b>{usd(m.pool_cents)}</b> pot
             {!pool.closed && ' · picks stay sealed until the pool closes'}
           </p>
           {pool.closed && <Split m={m} />}

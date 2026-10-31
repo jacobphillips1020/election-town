@@ -32,7 +32,7 @@ export function Invite({ pool, compact = false }: { pool: Pool; submitted?: bool
     <section className={`invite${compact ? ' compact' : ''}`} aria-labelledby="invite-h">
       <div className="invite-copy">
         <h2 id="invite-h">Want to up the stakes? Invite your friends.</h2>
-        <p>Every ballot adds {usd(pool.ballot_cents)} to the pot.{pool.ballots > 0 && <> Right now: <b>{pool.ballots}</b> {pool.ballots === 1 ? 'ballot' : 'ballots'}, <b>{usd(pool.pot_cents)}</b>.</>}</p>
+        <p>Every ballot adds {usd(pool.half_ballot_cents)} or {usd(pool.ballot_cents)} to the pot.{pool.ballots > 0 && <> Right now: <b>{pool.ballots}</b> {pool.ballots === 1 ? 'ballot' : 'ballots'}, <b>{usd(pool.pot_cents)}</b>.</>}</p>
       </div>
       <div className="invite-actions">
         <button type="button" className="btn" onClick={share}>Share invite</button>

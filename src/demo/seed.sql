@@ -19,11 +19,11 @@ insert into public.member_contacts (user_id, phone) values
   ('d0000000-0000-4000-8000-000000000005', '+13125550104'), ('d0000000-0000-4000-8000-000000000006', '+13125550105');
 insert into public.members (user_id)
   select id from auth.users where id <> 'd0000000-0000-4000-8000-000000000006';
-update public.group_settings set pay_note = 'Venmo the organizer $50 before the pool closes (demo).';
+update public.group_settings set pay_note = 'Venmo the organizer before the pool closes (demo).';
 
 -- A ballot from a compact spec: 'AK 1 51.2, GA 1 54.0, ...' (state, candidate 1 or 2, two-way share).
 -- States left out, and null seat counts, are submitted blank.
-create function public.demo_ballot(p_who uuid, p_spec text, p_senate_r int, p_house_r int) returns void
+create function public.demo_ballot(p_who uuid, p_spec text, p_senate_r int, p_house_r int, p_tier text default 'full') returns void
 language plpgsql as $$
 declare v jsonb := '{}'; m public.markets; part text; f text[]; w int; s int;
 begin
@@ -42,7 +42,7 @@ begin
       end loop;
     end if;
   end loop;
-  perform public.submit_ballot(v);
+  perform public.submit_ballot(v, p_tier);
 end $$;
 
 do $$
@@ -54,10 +54,10 @@ declare
   alex uuid := 'd0000000-0000-4000-8000-000000000005';
   ny17 uuid; ks uuid; mn uuid;
 begin
-  -- The main pool: three ballots in (Alex hasn't filled one out yet; Priya left Texas and the House blank for now).
+  -- The main pool: three ballots in (Alex hasn't filled one out yet; Priya went $25 and left Texas and the House blank for now).
   perform public.demo_ballot(maya, 'AK 1 51.0, GA 1 54.5, IA 2 50.5, ME 1 51.5, MI 1 51.0, NE 2 51.0, NH 1 53.0, NC 1 54.0, OH 1 51.5, TX 2 50.5', 48, 202);
   perform public.demo_ballot(dev,  'AK 2 50.5, GA 1 53.0, IA 2 51.0, ME 2 50.5, MI 1 50.5, NE 2 52.0, NH 1 52.0, NC 1 53.5, OH 2 50.5, TX 2 52.0', 51, 214);
-  perform public.demo_ballot(priya,'AK 1 52.0, GA 1 55.0, IA 1 50.5, ME 1 52.0, MI 1 52.5, NE 1 50.5, NH 1 54.0, NC 1 55.0, OH 1 52.0', 45, null);
+  perform public.demo_ballot(priya,'AK 1 52.0, GA 1 55.0, IA 1 50.5, ME 1 52.0, MI 1 52.5, NE 1 50.5, NH 1 54.0, NC 1 55.0, OH 1 52.0', 45, null, 'half');
 
   -- Side bets: NY-17 open, Kansas closed (picks revealed), Minnesota settled.
   perform set_config('request.jwt.claim.sub', dev::text, false);
@@ -90,5 +90,5 @@ begin
   perform set_config('request.jwt.claim.sub', '', false);
 end $$;
 
-drop function public.demo_ballot(uuid, text, int, int);
+drop function public.demo_ballot(uuid, text, int, int, text);
 update public.group_settings set open_signup = true;

@@ -70,7 +70,8 @@ describe('the slate', () => {
     expect(p.ballot_cents).toBe(5000)
     expect(p.markets.filter((m) => m.kind === 'senate').every((m) => m.buy_in_cents === 400 && !m.has_other)).toBe(true)
     expect(p.markets.filter((m) => m.kind !== 'senate').every((m) => m.buy_in_cents === 500)).toBe(true)
-    expect(new Date(p.deadline).toISOString()).toBe('2026-10-28T03:59:00.000Z') // Oct 27, 11:59 p.m. ET
+    // Oct 27, 11:59 p.m. ET for databases created before then (the live one); the original default after that.
+    expect(new Date(p.deadline).toISOString()).toBe(Date.now() < Date.parse('2026-10-28T03:59:00Z') ? '2026-10-28T03:59:00.000Z' : '2026-11-03T01:00:00.000Z')
     const ne = p.markets.find((m) => m.title === 'Nebraska Senate')!
     expect(ne.candidates.map((c) => [c.name, c.party])).toEqual([['Dan Osborn', 'I'], ['Pete Ricketts', 'R']])
     expect(p.senate).toHaveLength(35)
@@ -319,5 +320,94 @@ describe('expert ratings', () => {
     await expect(select(db, U.jake, `insert into public.expert_ratings (race_key, ratings) values ('x', '[]')`)).rejects.toThrow(/permission denied/i)
     // the old feed's column is gone
     expect((await db.query(`select 1 from information_schema.columns where table_name = 'race_polling' and column_name = 'experts'`)).rows).toHaveLength(0)
+  })
+})
+
+describe('two ballot sizes: $25 and $50', () => {
+  const submitAs = (who: string, picks: Record<string, unknown>, tier: 'full' | 'half') =>
+    rpc(db, who, 'submit_ballot', { p_picks: picks, p_tier: tier })
+  const settle = async (mid: string, result: Record<string, unknown>) => {
+    await rpc(db, U.jake, 'enter_result', { p_market: mid, p_winner: null, p_share_tenths: null, p_seats: null, p_source_url: 'https://example.test/r', ...result })
+    await rpc(db, U.jake, 'confirm_settlement', { p_market: mid })
+    const m = await rpc<{ payouts: { user_id: string; gross_cents: number; refund_cents: number }[] }>(db, U.jake, 'get_market', { p_id: mid })
+    return Object.fromEntries(m.payouts.map((x) => [x.user_id, [x.gross_cents, x.refund_cents]]))
+  }
+
+  test('a $25 ballot still covers every pick, at half the stake; pots split into Main and High-Roller', async () => {
+    await submitAs(U.maya, await ballot(), 'full')
+    await submitAs(U.priya, await ballot(), 'half')
+    type Pots = { pots: { main: number; high: number } }
+    const p = await pool(U.priya) as Pool & { half_ballot_cents: number; my_tier: string; tiers: Record<string, number> }
+    expect([p.ballot_cents, p.half_ballot_cents, p.my_tier, p.tiers]).toEqual([5000, 2500, 'half', { full: 1, half: 1 }])
+    expect([p.ballots, p.pot_cents]).toEqual([2, 7500])
+    const ia = p.markets.find((m) => m.title === 'Iowa Senate')! as PoolMarket & Pots
+    const seats = p.markets.find((m) => m.kind === 'senate_seats')! as PoolMarket & Pots
+    expect([ia.pool_cents, ia.pots]).toEqual([600, { main: 400, high: 200 }])
+    expect(seats.pots).toEqual({ main: 500, high: 250 })
+    const rows = (await db.query<{ commitment_cents: number }>(`select commitment_cents from public.entries where user_id = $1`, [U.priya])).rows
+    expect(rows).toHaveLength(12)
+    expect(rows.reduce((t, r) => t + r.commitment_cents, 0)).toBe(2500)
+  })
+
+  test('switching size on resubmit re-prices every pick; only the admin sees who chose which', async () => {
+    await submitAs(U.maya, await ballot(), 'full')
+    await submitAs(U.maya, await ballot(), 'half')
+    expect((await pool(U.maya)).pot_cents).toBe(2500)
+    await expect(rpc(db, U.maya, 'submit_ballot', { p_picks: await ballot(), p_tier: 'triple' })).rejects.toThrow(/\$25 or \$50/)
+    const asAdmin = await pool(U.jake) as Pool & { admin_ballots: { name: string; tier: string }[] }
+    expect(asAdmin.admin_ballots).toEqual([{ name: 'Maya', tier: 'half' }])
+    expect((await pool(U.dev) as Pool & { admin_ballots: unknown }).admin_ballots).toBeNull()
+  })
+
+  test('a $25 player with the best call takes the Main Pot; the best $50 call takes the High-Roller Pot', async () => {
+    const ia = await byKind('senate', 'Iowa')
+    await submitAs(U.maya, await ballot(520), 'full')   // off by 5
+    await submitAs(U.dev, await ballot(540), 'full')    // off by 25
+    await submitAs(U.priya, await ballot(516), 'half')  // off by 1: best overall
+    await submitAs(U.jake, await ballot(560), 'half')   // off by 45
+    await closePool()
+    const by = await settle(ia.id, { p_winner: 'c1', p_share_tenths: 515 })
+    // Main = 4 x $2 = $8 -> Priya. High-Roller = 2 x $2 = $4 -> Maya (best of the $50 ballots).
+    expect([by[U.priya], by[U.maya], by[U.dev], by[U.jake]]).toEqual([[800, 0], [400, 0], [0, 0], [0, 0]])
+  })
+
+  test('a $50 player with the best call takes both pots', async () => {
+    const ia = await byKind('senate', 'Iowa')
+    await submitAs(U.maya, await ballot(516), 'full')
+    await submitAs(U.dev, await ballot(540), 'full')
+    await submitAs(U.priya, await ballot(520), 'half')
+    await submitAs(U.jake, await ballot(560), 'half')
+    await closePool()
+    const by = await settle(ia.id, { p_winner: 'c1', p_share_tenths: 515 })
+    expect([by[U.maya], by[U.priya]]).toEqual([[1200, 0], [0, 0]])
+  })
+
+  test('if no $50 ballot called it, the High-Roller Pot goes back to the $50 players', async () => {
+    const ia = await byKind('senate', 'Iowa')
+    const wrong = { [ia.id]: { winner_id: 'c2', shares: { c1: 480, c2: 520 } } }
+    await submitAs(U.maya, await ballot(520, 48, 205, wrong), 'full')
+    await submitAs(U.dev, await ballot(520, 48, 205, wrong), 'full')
+    await submitAs(U.priya, await ballot(516), 'half')
+    await submitAs(U.jake, await ballot(560, 48, 205, wrong), 'half')
+    await closePool()
+    const by = await settle(ia.id, { p_winner: 'c1', p_share_tenths: 515 })
+    expect([by[U.priya], by[U.maya], by[U.dev], by[U.jake]]).toEqual([[800, 0], [0, 200], [0, 200], [0, 0]])
+    const total = Object.values(by).reduce((t, [g, r]) => t + g + r, 0)
+    expect(total).toBe(1200) // every cent accounted for
+  })
+
+  test('seat picks work the same way, and every cent is accounted for', async () => {
+    const sen = await byKind('senate_seats')
+    await submitAs(U.maya, await ballot(520, 47), 'full')
+    await submitAs(U.dev, await ballot(520, 52), 'full')
+    await submitAs(U.priya, await ballot(520, 48), 'half')
+    await closePool()
+    const by = await settle(sen.id, { p_seats: { r: 48 } })
+    // Main = $2.50 x 3 = $7.50 -> Priya (exact). High-Roller = $2.50 x 2 = $5 -> Maya (off by 1 vs Dev's 4).
+    expect([by[U.priya], by[U.maya], by[U.dev]]).toEqual([[750, 0], [500, 0], [0, 0]])
+  })
+
+  test('stakes must split evenly in half', async () => {
+    await expect(rpc(db, U.jake, 'set_pool_terms', { p_deadline: '2026-11-03T04:00:00Z', p_race_buy_in_cents: 401, p_seat_buy_in_cents: 500 })).rejects.toThrow(/split evenly/)
   })
 })

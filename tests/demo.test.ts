@@ -15,7 +15,7 @@ test('demo seed loads: pool open with sealed ballots; side bets open, closed, se
 
   type Pool = { ballots: number; pot_cents: number; closed: boolean; my_ballot: Record<string, unknown> | null; ballots_grid: unknown; forecasts: { senate?: { r_median: number } }; senate: { polling: unknown }[] }
   const asAlex = await rpc<Pool>(db, P(5), 'get_pool')
-  expect([asAlex.ballots, asAlex.pot_cents, asAlex.closed, asAlex.my_ballot, asAlex.ballots_grid]).toEqual([3, 15000, false, null, null])
+  expect([asAlex.ballots, asAlex.pot_cents, asAlex.closed, asAlex.my_ballot, asAlex.ballots_grid]).toEqual([3, 12500, false, null, null]) // two $50 ballots and Priya's $25
   expect(asAlex.forecasts.senate?.r_median).toBeCloseTo(48.4, 1)
   expect(asAlex.senate.filter((s) => s.polling).length).toBe(27)
   expect(Object.keys((await rpc<Pool>(db, P(2), 'get_pool')).my_ballot!)).toHaveLength(12)

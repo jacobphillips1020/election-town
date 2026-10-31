@@ -603,8 +603,9 @@ end $$;
 update public.markets m set entry_deadline = '2026-10-28 03:59:00+00'
 from public.group_settings g
 where m.status = 'open' and m.entry_deadline = g.default_deadline and clock_timestamp() < '2026-10-28 03:59:00+00';
-update public.group_settings set default_buy_in_cents = 500, default_deadline = '2026-10-28 03:59:00+00'
-where clock_timestamp() < '2026-10-28 03:59:00+00';
+update public.group_settings set default_deadline = '2026-10-28 03:59:00+00'
+where id and clock_timestamp() < '2026-10-28 03:59:00+00';
+update public.group_settings set default_buy_in_cents = 500 where id;
 
 -- Open side bets that nobody has entered yet move to the new terms.
 update public.markets m set buy_in_cents = 500, has_other = false,

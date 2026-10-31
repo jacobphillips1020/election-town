@@ -18,7 +18,9 @@ export type Tally = {
   r_min: number | null
   r_max: number | null
 }
-export type PoolMarket = Market & { polling: RacePolling | null; tally: Tally | null }
+export type PoolMarket = Market & { polling: RacePolling | null; tally: Tally | null; pots?: { main: number; high: number } }
+/** 'full' = $50 ballot (plays for both halves of every pot), 'half' = $25 ballot (the first half only). */
+export type Tier = 'full' | 'half'
 export type Forecast = {
   source_name: string
   source_url: string
@@ -34,6 +36,10 @@ export type Pool = {
   deadline: string | null
   closed: boolean
   ballot_cents: number
+  half_ballot_cents: number
+  tiers: { full: number; half: number }
+  my_tier: Tier | null
+  admin_ballots: { name: string; tier: Tier }[] | null
   ballots: number
   pot_cents: number
   pay_note: string | null

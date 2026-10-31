@@ -386,6 +386,19 @@ table.grid .seat-row td { color: var(--ink); background: #f1ece0; }
 .share-box input { width: 5.2rem; text-align: center; font-weight: 800; font-size: 1.1rem; }
 .share-note { font-size: .85rem; color: var(--muted); }
 .implied { font-size: .9rem; margin: 8px 0; }
+/* buy-in choice: $25 or $50 */
+.tiers { border: 0; padding: 0; margin: 14px 0 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tiers legend { font-weight: 700; font-size: .9rem; margin-bottom: 6px; padding: 0; }
+.tier { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 12px 14px; border: 2px solid var(--line);
+  border-radius: 8px; background: #fff; cursor: pointer; font-weight: 400; }
+.tier input { position: absolute; opacity: 0; pointer-events: none; }
+.tier.on { border-color: #7d1426; box-shadow: inset 0 0 0 1px #7d1426; background: #fbf3f4; }
+.tier:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tier-price { font-size: 1.5rem; font-weight: 850; line-height: 1.1; }
+.tier-desc { font-size: .85rem; color: var(--muted); }
+.tiers-how { grid-column: 1 / -1; margin: 0; font-size: .82rem; color: var(--muted); }
+.tiers:disabled .tier { cursor: default; opacity: .7; }
+@media (max-width: 26rem) { .tiers { grid-template-columns: 1fr; } }
 .explain { font-size: .88rem; background: #f3eedf; border-left: 3px solid #c9a227; padding: 8px 12px; margin: 4px 0 12px; border-radius: 0 4px 4px 0; }
 .twoway { font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
 .twoway b { color: var(--ink); }

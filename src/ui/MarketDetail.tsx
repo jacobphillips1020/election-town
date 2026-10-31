@@ -36,7 +36,9 @@ export function MarketPage() {
       </div>
       <p className="muted" style={{ marginTop: 6 }}>
         {m.featured ? 'On the main ballot' : `Side bet${m.proposed_by_name ? ` opened by ${m.proposed_by_name}` : ''}`}
-        {' · '}{usd(m.buy_in_cents ?? 0)} a pick · {plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot
+        {' · '}{m.featured
+          ? <>{plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot</>
+          : <>{usd(m.buy_in_cents ?? 0)} a pick · {plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot</>}
         {' · '}{phase === 'open' ? `closes ${formatET(m.entry_deadline)}` : phase === 'canceled' ? 'canceled' : `closed ${formatET(m.entry_deadline)}`}
       </p>
       <Err>{error}</Err>
@@ -313,7 +315,12 @@ function Rules({ m }: { m: Market }) {
       <h2>Rules</h2>
       <p className="small">{m.rules_note}</p>
       <p className="small muted">
-        {usd(m.buy_in_cents ?? 0)} a pick. Change or withdraw until {formatET(m.entry_deadline)}; picks are sealed until then.
+        {m.featured
+          ? <>Every ballot puts {usd((m.buy_in_cents ?? 0) / 2)} into this pot; $50 ballots put in {usd(m.buy_in_cents ?? 0)}. The first half of the pot
+              {' '}goes to the best call among everyone; the second half to the best call among $50 ballots. If nobody in a half
+              {' '}called it, that half is refunded. </>
+          : <>{usd(m.buy_in_cents ?? 0)} a pick. </>}
+        Change or withdraw until {formatET(m.entry_deadline)}; picks are sealed until then.
         Fewer than two picks at the close: everyone is refunded. No money moves through this site.
       </p>
     </section>
