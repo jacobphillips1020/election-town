@@ -103,10 +103,9 @@ function CardView({ pool }: { pool: Pool }) {
       <p className="small"><Link to="/ballot">← My ballot</Link></p>
       <h1>Share my picks</h1>
       <p className="lede">
-        Your picks as a map. Picks stay sealed on the site until the pool closes, so this card is the only way anyone sees
-        yours early. Share it with whoever you like, or keep it to yourself.
+        Your picks, ready to send. No one can see them on the site until the pool closes.
       </p>
-      {!submitted && <p className="callout warn">{any ? 'These are your unsubmitted picks from this browser.' : 'Fill out your ballot first; the card shows your picks.'} <Link to="/ballot">Go to my ballot</Link></p>}
+      {!submitted && <p className="callout warn">{any ? 'These picks aren’t submitted yet.' : 'Fill out your ballot first.'} <Link to="/ballot">Go to my ballot</Link></p>}
       <div className="card-actions row">
         <button className="btn" disabled={!!busy || !any} onClick={pdf}>{busy === 'pdf' ? 'Making PDF…' : 'Download PDF'}</button>
         <button className="btn ghost" disabled={!!busy || !any} onClick={png}>{busy === 'png' ? 'Drawing…' : 'Download image'}</button>

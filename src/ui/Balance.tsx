@@ -23,7 +23,7 @@ export function Balance({ total, rows, line, lineLabel, leftLabel = 'Dem + Ind' 
       {shown.map((x) => {
         const r = x.r!
         const rp = (r / total) * 100
-        const round = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+        const round = (n: number) => (Number.isInteger(n) ? String(n) : `~${Math.round(n)}`)
         return (
           <div key={x.label} className={`bal-row${x.strong ? ' bal-strong' : ''}`} role="row">
             <span className="bal-label" role="rowheader">{x.label}</span>

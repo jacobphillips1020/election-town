@@ -47,11 +47,13 @@ export function MapLegend({ group = false }: { group?: boolean }) {
     : [['#1d4f9f', 'Solid'], ['#5f88cf', 'Likely'], ['#a9c0ea', 'Lean'], ['#d8cdaa', 'Toss-up'], ['#eeb0a8', 'Lean'], ['#d66b5e', 'Likely'], ['#b42318', 'Solid']]
   return (
     <div className="legend" aria-hidden="true">
-      <span className="legend-scale">
+      <span className="legend-scale-wrap">
+        <span className="legend-scale">
         {items.map(([c, l], i) => <span key={i} className="legend-sw" style={{ background: c }} title={l} />)}
       </span>
-      <span className="legend-ends"><span>Dem / Ind</span><span>{group ? 'share of ballots' : 'polling'}</span><span>Rep</span></span>
-      <span className="legend-key"><span className="legend-star" /> on the ballot</span>
+      <span className="legend-ends"><span>Dem</span><span>{group ? 'Split' : 'Toss-up'}</span><span>Rep</span></span>
+      </span>
+      <span className="legend-key"><span className="legend-star" /> On the ballot</span>
     </div>
   )
 }

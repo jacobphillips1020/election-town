@@ -56,8 +56,7 @@ export function OpenMarketPage() {
       <p className="small"><Link to="/side">← Side bets</Link></p>
       <h1>Open a side bet</h1>
       <p className="muted" style={{ maxWidth: '38rem' }}>
-        Pick any race that isn&rsquo;t on the main ballot. The candidates, polling, rules, {buyIn} stake and closing time are
-        set for you; then make your pick and send the link to friends. You can change your pick until it closes.
+        Pick a race, make your pick, send friends the link. {buyIn}, and you can change your pick until it closes.
       </p>
       {board.loading && !board.data ? <Loading /> : (
         <RaceBoard races={races} onOpen={openMarket} opening={opening} error={error || board.error || ''}

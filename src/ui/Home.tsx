@@ -16,7 +16,7 @@ import { Balance } from './Balance'
 import { currentDraft, pickedSides } from './Ballot'
 import { Err, Loading } from './common'
 import { Invite, PayNote } from './Invite'
-import { Experts, Links, RatingChip } from './Pick'
+import { Experts, Links } from './Pick'
 import { MapLegend, TileMap, type Tile } from './TileMap'
 
 type Mode = 'polls' | 'mine' | 'group'
@@ -60,7 +60,6 @@ function Dashboard({ pool }: { pool: Pool }) {
   return (
     <main className="page wide" id="main">
       <Hero pool={pool} submitted={submitted} />
-      {!pool.closed && <Invite pool={pool} submitted={submitted} compact />}
 
       <section className="section" aria-labelledby="senate-h">
         <div className="sec-head">
@@ -72,9 +71,9 @@ function Dashboard({ pool }: { pool: Pool }) {
           </div>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          {mode === 'polls' && '35 races this year, colored by who leads the polling average. Outlined: the 10 on the ballot. Tap a state.'}
-          {mode === 'mine' && 'Your ballot picks, shaded by the margin you picked. Other races follow the polls.'}
-          {mode === 'group' && 'What the group picked: shaded by how many ballots agreed (like the 2024 composite map).'}
+          {mode === 'polls' && 'Tap a state. Outlined states are on the ballot.'}
+          {mode === 'mine' && 'Your picks. Other states follow the polls.'}
+          {mode === 'group' && 'How the group picked, shaded by how many agreed.'}
         </p>
         <div className="map-wrap">
           <TileMap tiles={tiles} selected={sel} onSelect={(s) => setSel(sel === s ? null : s)} label="Senate races by state" />
@@ -85,28 +84,29 @@ function Dashboard({ pool }: { pool: Pool }) {
         <h3 className="bal-h">Balance of power</h3>
         <Balance total={100} line={50} lineLabel="50 keeps R control" rows={[
           { label: 'Now', r: SENATE_NOW_R },
-          { label: 'Polls', r: senateR(pool.senate), note: 'each race to its polling leader' },
-          { label: 'Markets', r: pool.forecasts.senate?.r_median ?? null, note: pool.forecasts.senate?.d_control_pct != null ? `Polymarket · Dems ${Math.round(pool.forecasts.senate.d_control_pct)}% to win` : 'Polymarket' },
+          { label: 'Polls', r: senateR(pool.senate) },
+          { label: 'Markets', r: pool.forecasts.senate?.r_median ?? null, note: pool.forecasts.senate?.d_control_pct != null ? `Polymarket: Dems ${Math.round(pool.forecasts.senate.d_control_pct)}% to win` : 'Polymarket' },
           { label: 'You', r: myR(seatSen) ?? (mine ? senateR(pool.senate, pickedSides(pool.markets, mine)) : null), strong: true },
           { label: 'Group', r: seatSen?.tally?.r_mean ?? null, note: seatSen?.tally ? `average of ${plural(seatSen.tally.n, 'ballot')}` : undefined, strong: true },
         ]} />
       </section>
 
+      {!pool.closed && <Invite pool={pool} submitted={submitted} compact />}
+
       <section className="section" aria-labelledby="house-h">
         <h2 id="house-h">House</h2>
         <Balance total={435} line={HOUSE_MAJORITY} lineLabel="218 for a majority" rows={[
           { label: '2024', r: HOUSE_2024_R },
-          { label: 'Markets', r: pool.forecasts.house?.r_median ?? null, note: pool.forecasts.house?.d_control_pct != null ? `Polymarket · Dems ${Math.round(pool.forecasts.house.d_control_pct)}% to win` : 'Polymarket' },
+          { label: 'Markets', r: pool.forecasts.house?.r_median ?? null, note: pool.forecasts.house?.d_control_pct != null ? `Polymarket: Dems ${Math.round(pool.forecasts.house.d_control_pct)}% to win` : 'Polymarket' },
           { label: 'You', r: myR(seatHouse), strong: true },
           { label: 'Group', r: seatHouse?.tally?.r_mean ?? null, note: seatHouse?.tally ? `average of ${plural(seatHouse.tally.n, 'ballot')}` : undefined, strong: true },
         ]} />
-        <HouseStrip polls={pool.house_polls} />
       </section>
 
       <section className="section" aria-labelledby="picks-h">
         <div className="sec-head">
           <h2 id="picks-h">The {pool.markets.length} picks</h2>
-          <Link to="/ballot" className="small">{submitted ? 'Edit my ballot →' : 'Fill out the ballot →'}</Link>
+          {!pool.closed && <Link to="/ballot" className="small">{submitted ? 'Edit my ballot →' : 'Fill out the ballot →'}</Link>}
         </div>
         <ul className="plist">
           {pool.markets.map((m) => <PickRow key={m.id} m={m} pool={pool} onPick={() => m.polling_ref && (setSel(m.polling_ref.state), document.getElementById('senate-h')?.scrollIntoView({ behavior: 'smooth' }))} />)}
@@ -119,9 +119,9 @@ function Dashboard({ pool }: { pool: Pool }) {
         <span>Ratings:</span> Senate <Links links={RATINGS_LINKS.senate} /> · House <Links links={RATINGS_LINKS.house} />
       </p>
       <p className="board-source">
-        Polling: PollingSource averages{pool.polling_fetched_at && `, updated ${new Date(pool.polling_fetched_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}.
-        Race ratings: Cook, Inside Elections and Sabato, as compiled on <a href="https://en.wikipedia.org/wiki/2026_United_States_Senate_elections#Predictions" target="_blank" rel="noreferrer">Wikipedia</a> (hover a rating for its date).
-        Seat forecasts: Polymarket prices (median seats), refreshed daily. “Now” is today’s Senate; the House shows the 2024 result.
+        Sources: polls from PollingSource{pool.polling_fetched_at && ` (updated ${new Date(pool.polling_fetched_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`},
+        {' '}ratings via <a href="https://en.wikipedia.org/wiki/2026_United_States_Senate_elections#Predictions" target="_blank" rel="noreferrer">Wikipedia</a>, seat odds from Polymarket.
+        {' '}&ldquo;Now&rdquo; is today&rsquo;s Senate; the House row is the 2024 result.
       </p>
     </main>
   )
@@ -132,7 +132,6 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
   return (
     <section className="hero">
       <div>
-        <p className="hero-kicker">The 2026 Midterm Pool</p>
         <h1>{pool.closed ? 'Picks are in. Now we wait.' : 'Call the Senate. Call the House.'}</h1>
         <p className="hero-sub">
           {pool.markets.length} picks · {usd(pool.half_ballot_cents)} or {usd(pool.ballot_cents)} a ballot ·{' '}
@@ -148,10 +147,10 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
           <Link className="btn big" to="/ballot">{!submitted ? 'Fill out my ballot' : blank ? 'Finish my ballot' : 'Edit my ballot'}</Link>
           {submitted && <Link className="btn ghost big" to="/card">Share my picks</Link>}
           <p className="hero-note">
-            {!submitted ? 'Submit what you have and come back to finish or change it any time before the close.'
-              : blank ? `You're in. ${blank} ${blank === 1 ? 'pick is' : 'picks are'} still blank; fill ${blank === 1 ? 'it' : 'them'} in any time before the close.`
-              : "You're in. Change any pick until the close."}
-            {submitted && pool.pay_note && <> <span className="hero-pay">Your buy-in: <b>{usd(pool.my_tier === 'half' ? pool.half_ballot_cents : pool.ballot_cents)}</b>. <PayNote text={pool.pay_note} /></span></>}
+            {!submitted ? 'You can change it as often as you like until the close.' : <>
+              You&rsquo;re in ({usd(pool.my_tier === 'half' ? pool.half_ballot_cents : pool.ballot_cents)}){blank ? `, with ${blank} still blank` : ''}.
+              {pool.pay_note && <> <span className="hero-pay"><PayNote text={pool.pay_note} /></span></>}
+            </>}
           </p>
         </div>
       )}
@@ -218,10 +217,10 @@ function Split({ m }: { m: PoolMarket }) {
 function YouVsGroup({ m, pool }: { m: PoolMarket; pool: Pool }) {
   const mine = pool.my_ballot?.[m.id]
   if (!mine) return null
-  if (!mine.seats && !mine.winner_id) return <p className="small muted">You left this one blank{pool.closed ? '' : ' so far'}.</p>
+  if (!mine.seats && !mine.winner_id) return <p className="small muted">You left this one blank.</p>
   if (mine.seats) {
     const mean = m.tally?.r_mean
-    return <p className="small">You: <b>{mine.seats.r}</b> Republican seats{mean != null && <> · group average {mean} ({mine.seats.r - mean > 0 ? '+' : ''}{(mine.seats.r - mean).toFixed(1)})</>}</p>
+    return <p className="small">You: <b>{mine.seats.r}</b>{mean != null && <> · group avg {Math.round(mean)}</>}</p>
   }
   const c = m.candidates.find((x) => x.id === mine.winner_id)
   if (!c || !mine.shares) return null
@@ -231,9 +230,9 @@ function YouVsGroup({ m, pool }: { m: PoolMarket; pool: Pool }) {
   const avg = t?.mean_shares[c.id] != null ? t.mean_shares[c.id] / 10 : null
   return (
     <p className="small">
-      You: <b>{c.name} {share.toFixed(1)}%</b>
-      {agree !== null && <> · {Math.round(agree * 100)}% of ballots agree</>}
-      {avg !== null && <> · group average for {lastName(c.name, c.name)} {avg.toFixed(1)} ({share - avg >= 0 ? '+' : ''}{(share - avg).toFixed(1)})</>}
+      You: <b>{lastName(c.name, c.name)} {share.toFixed(1)}</b>
+      {agree !== null && <> · {Math.round(agree * 100)}% agree</>}
+      {avg !== null && <> · group avg {avg.toFixed(1)}</>}
     </p>
   )
 }
@@ -257,12 +256,12 @@ function RaceDetail({ row, m, pool, mine, onClose }: { row: SenateRow; m: PoolMa
       {p?.dem_avg != null && p.rep_avg != null ? (
         <MatchupLine row={row} m={m} />
       ) : <p className="small">No polling average yet.</p>}
-      <div className="bi-meta">{p?.rating && <RatingChip rating={p.rating} prefix="Polls" />}<Experts experts={row.experts ?? p?.experts} /></div>
+      <div className="bi-meta"><Experts experts={row.experts ?? p?.experts} /></div>
       {m && (
         <>
           <p className="small" style={{ margin: '8px 0 4px' }}>
-            <b>{plural(m.entrants, 'pick')}</b> · <b>{usd(m.pool_cents)}</b> pot
-            {!pool.closed && ' · picks stay sealed until the pool closes'}
+            <b>{m.entrants} in</b> · <b>{usd(m.pool_cents)}</b> pot
+            {!pool.closed && <span className="muted"> · picks hidden until the close</span>}
           </p>
           {pool.closed && <Split m={m} />}
           <YouVsGroup m={m} pool={pool} />
@@ -304,46 +303,22 @@ function MatchupLine({ row, m }: { row: SenateRow; m?: Market }) {
 function PickRow({ m, pool, onPick }: { m: PoolMarket; pool: Pool; onPick: () => void }) {
   const seat = m.kind === 'senate_seats' || m.kind === 'house_seats'
   const row = m.polling_ref ? pool.senate.find((r) => r.state === m.polling_ref!.state && r.special === m.polling_ref!.special) : undefined
+  const p = row?.polling
+  const title = m.kind === 'senate_seats' ? 'Senate seats' : m.kind === 'house_seats' ? 'House seats' : m.title
+  const sub = seat
+    ? (m.tally?.r_mean != null ? `Group avg ${Math.round(m.tally.r_mean)} Republican seats (${m.tally.r_min}–${m.tally.r_max})` : 'Republican seats; closest guess wins')
+    : p?.margin_label ? `Polls ${p.margin_label}` : 'No polls yet'
+  const inner = (
+    <>
+      <span className="prow-top"><span className="prow-title">{title}</span><span className="prow-stats">{m.entrants} in · {usd(m.pool_cents)}</span></span>
+      {pool.closed && m.tally && !seat ? <Split m={m} /> : <span className="small muted">{sub}</span>}
+      <YouVsGroup m={m} pool={pool} />
+    </>
+  )
   return (
     <li className="prow">
-      {seat ? (
-        <Link to={`/m/${m.id}`} className="prow-hit">
-          <span className="prow-top"><span className="prow-title">{m.kind === 'senate_seats' ? 'Senate seats' : 'House seats'}</span>
-            <span className="prow-stats">{plural(m.entrants, 'pick')} · {usd(m.pool_cents)}</span></span>
-          <span className="small muted">
-            {m.tally?.r_mean != null ? <>Group average: <b>{m.tally.r_mean}</b> Republican seats (range {m.tally.r_min}–{m.tally.r_max})</> : 'Republican seats after the election; closest guess takes the pot'}
-          </span>
-          <YouVsGroup m={m} pool={pool} />
-        </Link>
-      ) : (
-        <button type="button" className="prow-hit" onClick={onPick}>
-          <span className="prow-top"><span className="prow-title">{m.title}</span>
-            <span className="prow-stats">{plural(m.entrants, 'pick')} · {usd(m.pool_cents)}</span></span>
-          {pool.closed && m.tally ? <Split m={m} /> : row?.polling?.dem_avg != null ? <MatchupLine row={row} m={m} /> : <span className="small muted">No polling average yet</span>}
-          {pool.closed && <YouVsGroup m={m} pool={pool} />}
-        </button>
-      )}
+      {seat ? <Link to={`/m/${m.id}`} className="prow-hit">{inner}</Link> : <button type="button" className="prow-hit" onClick={onPick}>{inner}</button>}
     </li>
-  )
-}
-
-function HouseStrip({ polls }: { polls: Pool['house_polls'] }) {
-  if (!polls.length) return null
-  const d = polls.filter((x) => x.margin > 0).length
-  const r = polls.filter((x) => x.margin < 0).length
-  return (
-    <div className="hstrip">
-      <p className="small" style={{ margin: '10px 0 4px' }}>
-        <b>{polls.length}</b> House districts have polling: Democrats lead in <b>{d}</b>, Republicans in <b>{r}</b>.
-        <span className="muted"> Most districts are never polled, so this isn&rsquo;t a seat count.</span>
-      </p>
-      <div className="hstrip-dots" aria-hidden="true">
-        {polls.map((x) => (
-          <span key={`${x.state}${x.district}`} title={`${x.state}-${x.district}: ${x.margin > 0 ? 'D' : x.margin < 0 ? 'R' : 'Tied'}${x.margin ? `+${Math.abs(x.margin)}` : ''}`}
-            style={{ background: tone(x.margin > 0 ? 'D' : x.margin < 0 ? 'R' : null, levelFromMargin(x.margin)) }} />
-        ))}
-      </div>
-    </div>
   )
 }
 
@@ -362,14 +337,14 @@ function GroupGrid({ pool }: { pool: Pool }) {
   return (
     <section className="section" aria-labelledby="grid-h">
       <h2 id="grid-h">How the group voted</h2>
-      <p className="hint" style={{ marginTop: 0 }}>Every ballot, anonymized, sorted by Senate seats. Your column is outlined.</p>
+      <p className="hint" style={{ marginTop: 0 }}>Every ballot, no names, sorted by Senate seats. Yours is outlined.</p>
       {unanimous.length > 0 && (
         <p className="small">Unanimous: {unanimous.map((m) => `${stateName(m.polling_ref!.state)} (${m.candidates.find((c) => c.id === cols[0].picks[m.id]?.w)?.name})`).join(', ')}.</p>
       )}
       <div className="scroll-x">
         <table className="grid">
           <thead>
-            <tr><th>Race</th><th className="num">Dem / Ind</th>{cols.map((b, i) => <th key={i} className={b.you ? 'you' : ''}>{b.you ? 'You' : i + 1}</th>)}</tr>
+            <tr><th>Race</th><th className="num">Split</th>{cols.map((b, i) => <th key={i} className={b.you ? 'you' : ''}>{b.you ? 'You' : i + 1}</th>)}</tr>
           </thead>
           <tbody>
             {races.map((m) => {
@@ -379,7 +354,7 @@ function GroupGrid({ pool }: { pool: Pool }) {
               return (
                 <tr key={m.id}>
                   <th scope="row">{stateName(m.polling_ref!.state)}</th>
-                  <td className="num">{made ? `${Math.round((n / made) * 100)}%` : '–'}</td>
+                  <td className="num">{made ? `${Math.round((n / made) * 100)}% ${sideOf(first)}` : '–'}</td>
                   {cols.map((b, i) => {
                     const c = m.candidates.find((x) => x.id === b.picks[m.id]?.w)
                     const s = b.picks[m.id]?.s
@@ -391,7 +366,7 @@ function GroupGrid({ pool }: { pool: Pool }) {
             {[seatSen, seatHouse].filter(Boolean).map((m) => (
               <tr key={m!.id} className="seat-row">
                 <th scope="row">{m!.kind === 'senate_seats' ? 'Senate R' : 'House R'}</th>
-                <td className="num">{m!.tally?.r_mean ?? ''}</td>
+                <td className="num">{m!.tally?.r_mean != null ? `avg ${Math.round(m!.tally.r_mean)}` : ''}</td>
                 {cols.map((b, i) => <td key={i} className={b.you ? 'you' : ''}>{b.picks[m!.id]?.r ?? ''}</td>)}
               </tr>
             ))}

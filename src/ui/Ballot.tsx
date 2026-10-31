@@ -9,7 +9,7 @@ import { RATINGS_LINKS, buildBallot, checkPick, draftFromBallot, isBlank, raceLi
 import { HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, senateKey, senateR, type Side } from '../domain/senate'
 import { Err, Loading } from './common'
 import { Invite, PayNote } from './Invite'
-import { Experts, Links, RacePick, RatingChip, SeatPick } from './Pick'
+import { Experts, Links, RacePick, SeatPick } from './Pick'
 import { Balance } from './Balance'
 
 // Unsubmitted picks are kept per person in this browser ("anon" before sign-up, carried over once signed up).
@@ -60,7 +60,6 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   const serverTier: Tier = pool.my_tier ?? 'full'
   const [tier, setTier] = useState<Tier>(() => currentDraft(uid, pool.my_updated_at)?.tier ?? serverTier)
   const price = tier === 'half' ? pool.half_ballot_cents : pool.ballot_cents
-  const raceStake = (races0: PoolMarket | undefined) => (races0?.buy_in_cents ?? 400) / (tier === 'half' ? 2 : 1)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(false)
@@ -101,7 +100,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
       return
     }
     if (made === 0) { setErr('Make at least one pick.'); return }
-    if (skipped.length && !confirm(`${skipped.length === 1 ? 'One pick is' : `${skipped.length} picks are`} still blank: ${skipped.map(label).join(', ')}.\n\nThat's fine: submit now and fill ${skipped.length === 1 ? 'it' : 'them'} in any time before ${formatET(pool.deadline)}. Anything still blank at the close stays in the pot but can't win.\n\nSubmit what you have?`)) return
+    if (skipped.length && !confirm(`Still blank: ${skipped.map(label).join(', ')}.\n\nSubmit anyway? You can fill ${skipped.length === 1 ? 'it' : 'them'} in later. Anything blank at the close still pays in but can't win.`)) return
     if (!account.signedIn) { saveLocal(null, draft, tier); nav(account.signupPath('/ballot')); return }
     if (!account.isMember) { setErr('The group is invite-only right now. Ask the organizer for the invitation link.'); return }
     setBusy(true)
@@ -138,16 +137,15 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   const sen = pool.forecasts.senate
   const house = pool.forecasts.house
 
+  const stamp = pool.my_updated_at ? new Date(pool.my_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+  const youR = (m: PoolMarket | undefined) => (m && checkPick(m, effective[m.id]).ok ? +effective[m.id]!.r! : null)
+
   return (
     <main className="page" id="main">
       <p className="small"><Link to="/">← The pool</Link></p>
       <h1>{submitted ? 'Your ballot' : 'Fill out your ballot'}</h1>
       <p className="lede">
-        {count || 12} picks, {usd(pool.half_ballot_cents)} or {usd(pool.ballot_cents)} all in, split across every pick.{' '}
-        {open ? <><b>Submit what you have now and come back to finish or change it any time</b> until {formatET(pool.deadline)}.
-          {' '}Your picks also save in this browser as you go. A race still blank at the close stays in the pot (your buy-in
-          {' '}covers it), it just can&rsquo;t win.</>
-          : <>The pool closed {formatET(pool.deadline)}.</>}
+        {open ? <>{count || 12} picks. Change them as often as you like until {formatET(pool.deadline)}.</> : <>The pool closed {formatET(pool.deadline)}.</>}
       </p>
 
       <fieldset className="tiers" disabled={!open}>
@@ -162,15 +160,25 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
           <span className="tier-price">{usd(pool.ballot_cents)}</span>
           <span className="tier-desc">Full stakes: win up to twice as much</span>
         </label>
-        <p className="tiers-how">Everyone competes for the first half of each pot. Only {usd(pool.ballot_cents)} ballots compete for the second half.</p>
+        <p className="tiers-how">Everyone plays for the first half of each pot. Only {usd(pool.ballot_cents)} ballots play for the second half.</p>
       </fieldset>
+
+      <details className="how">
+        <summary>How it works</summary>
+        <ul>
+          <li>Pick each winner and their <b>two-way vote share</b>: their votes divided by the votes for the two listed candidates. A race that ends 48&ndash;42 with 10% for others is 53.3&ndash;46.7.</li>
+          <li>Right winner first; then the closest share takes that race&rsquo;s pot. For seats, the closest guess wins.</li>
+          <li>Leave a race blank and your money still goes in. You just can&rsquo;t win that one.</li>
+          <li>No one sees anyone&rsquo;s picks until the pool closes.</li>
+          <li>Ratings: Senate <Links links={RATINGS_LINKS.senate} /> · House <Links links={RATINGS_LINKS.house} /></li>
+        </ul>
+      </details>
 
       {done && (
         <div className="callout ok-callout" role="status">
-          <strong>Ballot in. </strong>
-          {skipped.length > 0 ? <>{skipped.length} still blank; come back and fill {skipped.length === 1 ? 'it' : 'them'} in any time. </> : null}
-          You can change any pick until {formatET(pool.deadline)}; just come back to My Ballot.{' '}
-          Your buy-in: <b>{usd(price)}</b>. {pool.pay_note ? <>Next: <PayNote text={pool.pay_note} /></> : <>Pay {admin} before the pool closes.</>}
+          <strong>You&rsquo;re in ({usd(price)}).</strong>{' '}
+          {skipped.length > 0 && <>{skipped.length} still blank. </>}
+          {pool.pay_note ? <PayNote text={pool.pay_note} /> : <>Pay {admin} before the pool closes.</>}
           <div className="row" style={{ marginTop: 8 }}>
             <Link className="btn" to="/card">Share my picks</Link>
             <Link className="btn ghost" to="/">See the pool</Link>
@@ -178,28 +186,8 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
         </div>
       )}
       {done && <Invite pool={pool} submitted />}
-      {!done && submitted && !dirty && open && (
-        <p className="callout" role="status">
-          Submitted{pool.my_updated_at && ` ${new Date(pool.my_updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}.
-          {' '}{skipped.length > 0 && <b>{skipped.length} still blank. </b>}Change or fill in anything below and resubmit, as often as you like, until {formatET(pool.deadline)}. <Link to="/card">Share my picks</Link>
-        </p>
-      )}
-      {submitted && dirty && open && <p className="callout warn" role="status">You have unsubmitted changes. Resubmit to save them.</p>}
 
-      <p className="research">
-        <span>Research:</span> Senate ratings <Links links={RATINGS_LINKS.senate} />
-      </p>
-
-      <h2 className="ballot-h">The Senate races that decide control</h2>
-      <p className="hint" style={{ marginTop: -4 }}>
-        Pick each winner and their two-way vote share. {usd(raceStake(races[0]))} per race:
-        among those who pick the winner, the closest share takes the pot.
-      </p>
-      <div className="explain">
-        <b>Two-way vote share</b> = the winner&rsquo;s votes ÷ the votes for the two candidates listed. Votes for anyone
-        else don&rsquo;t count. So a race that ends <b>48% to 42%</b> with 10% for others is <b>53.3% to 46.7%</b> two-way.
-        The polling on each race is converted the same way.
-      </div>
+      <h2 className="ballot-h">Senate races</h2>
       <ol className="ballot">
         {races.map((m, i) => {
           const bad = tried && !checkPick(m, effective[m.id]).ok
@@ -209,18 +197,17 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
               <div className="bi-head">
                 <span className="bi-num">{i + 1}</span>
                 <h3>{m.title}</h3>
-                {p?.rating && <RatingChip rating={p.rating} prefix="Polls" />}
               </div>
               <div className="bi-meta">
-                {p?.margin_label && <span><b>{p.margin_label}</b> in {p.poll_count} {p.poll_count === 1 ? 'poll' : 'polls'}</span>}
+                {p?.margin_label && <span><b>{p.margin_label}</b> · {p.poll_count} {p.poll_count === 1 ? 'poll' : 'polls'}</span>}
                 <Experts experts={p?.experts} />
               </div>
               <RacePick m={m} polling={p} value={effective[m.id]} onChange={(v) => set(m.id, v)} disabled={!open} />
               <div className="bi-foot">
                 <Links links={raceLinks(m, p?.page)} />
                 <span className="bi-foot-r">
-                  {open && !isBlank(m, effective[m.id]) && <button type="button" className="linklike small" onClick={() => set(m.id, {})}>Clear pick</button>}
-                  <Link className="small" to={`/m/${m.id}`}>Rules & details</Link>
+                  {open && !isBlank(m, effective[m.id]) && <button type="button" className="linklike small" onClick={() => set(m.id, {})}>Clear</button>}
+                  <Link className="small" to={`/m/${m.id}`}>Rules</Link>
                 </span>
               </div>
               {bad && <p className="err small">{(checkPick(m, effective[m.id]) as { reason: string }).reason}</p>}
@@ -229,20 +216,16 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
         })}
       </ol>
 
-      <h2 className="ballot-h">Seats</h2>
-      <p className="hint" style={{ marginTop: -4 }}>
-        How many seats will Republicans hold? {usd((seatSen?.buy_in_cents ?? 500) / (tier === 'half' ? 2 : 1))} each: the closest guess takes the pot.
-        <> House ratings <Links links={RATINGS_LINKS.house} /></>
-      </p>
+      <h2 className="ballot-h">Republican seats</h2>
       <ol className="ballot" start={races.length + 1}>
         {seatSen && (
           <li id={`pick-${seatSen.id}`} className={`ballot-item${tried && !checkPick(seatSen, effective[seatSen.id]).ok ? ' bad' : ''}`}>
-            <div className="bi-head"><span className="bi-num">{races.length + 1}</span><h3>Senate: Republican seats</h3></div>
+            <div className="bi-head"><span className="bi-num">{races.length + 1}</span><h3>Senate</h3></div>
             <p className="implied">
-              Your race picks add up to <b>{implied} Republican seats</b>
-              {draft[seatSen.id]?.touched
-                ? <> · <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>use {implied}</button></>
-                : <> (31 not up this year, the other races as polled, plus your {races.length}). Set your own number if you think otherwise.</>}
+              Your race picks add up to <b>{implied}</b>.{' '}
+              {draft[seatSen.id]?.touched && +(effective[seatSen.id]?.r ?? '') !== implied
+                ? <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>Use {implied}</button>
+                : 'Change it if you like.'}
             </p>
             <SeatPick id={seatSen.id} chamber="senate" min={35} max={65} disabled={!open} value={effective[seatSen.id]?.r}
               onChange={(r) => set(seatSen.id, { r, touched: true })} />
@@ -250,49 +233,49 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
               { label: 'Now', r: SENATE_NOW_R },
               { label: 'Polls', r: pollsR },
               { label: 'Markets', r: sen?.r_median ?? null, note: sen?.d_control_pct != null ? `Dems ${Math.round(sen.d_control_pct)}% to win` : undefined },
-              { label: 'You', r: checkPick(seatSen, effective[seatSen.id]).ok ? +effective[seatSen.id]!.r! : null, strong: true },
+              { label: 'You', r: youR(seatSen), strong: true },
             ]} />
           </li>
         )}
         {seatHouse && (
           <li id={`pick-${seatHouse.id}`} className={`ballot-item${tried && !checkPick(seatHouse, effective[seatHouse.id]).ok ? ' bad' : ''}`}>
-            <div className="bi-head"><span className="bi-num">{races.length + 2}</span><h3>House: Republican seats</h3></div>
+            <div className="bi-head"><span className="bi-num">{races.length + 2}</span><h3>House</h3></div>
             <p className="implied">
-              Republicans won {HOUSE_2024_R} in 2024; {HOUSE_MAJORITY} is a majority.
-              {house?.r_median != null && <> Betting markets put them near <b>{Math.round(house.r_median)}</b>.</>}
+              Republicans won {HOUSE_2024_R} in 2024. {HOUSE_MAJORITY} is a majority.
+              {house?.r_median != null && <> Markets say about {Math.round(house.r_median)}.</>}
             </p>
             <SeatPick id={seatHouse.id} chamber="house" min={170} max={260} disabled={!open} value={effective[seatHouse.id]?.r}
               onChange={(r) => set(seatHouse.id, { r, touched: true })} />
-            {open && !isBlank(seatHouse, effective[seatHouse.id]) && <button type="button" className="linklike small" onClick={() => set(seatHouse.id, { r: '', touched: true })}>Clear pick</button>}
+            {open && !isBlank(seatHouse, effective[seatHouse.id]) && <button type="button" className="linklike small" onClick={() => set(seatHouse.id, { r: '', touched: true })}>Clear</button>}
             <Balance total={435} line={HOUSE_MAJORITY} lineLabel="218 for a majority" rows={[
               { label: '2024', r: HOUSE_2024_R },
               { label: 'Markets', r: house?.r_median ?? null, note: house?.d_control_pct != null ? `Dems ${Math.round(house.d_control_pct)}% to win` : undefined },
-              { label: 'You', r: checkPick(seatHouse, effective[seatHouse.id]).ok ? +effective[seatHouse.id]!.r! : null, strong: true },
+              { label: 'You', r: youR(seatHouse), strong: true },
             ]} />
           </li>
         )}
       </ol>
-      <p className="board-source">
-        Polling: PollingSource averages. Race ratings: Cook, Inside Elections and Sabato, as compiled on Wikipedia. Markets: Polymarket seat prices (median).
-        Two-way share = votes for the two listed candidates only.
-      </p>
+      <p className="board-source">Sources: polls from PollingSource, ratings via Wikipedia, seat odds from Polymarket.</p>
+
+      {open && submitted && (
+        <p style={{ marginTop: 16 }}><button type="button" className="linklike danger-link" disabled={busy} onClick={withdraw}>Withdraw my ballot</button></p>
+      )}
+      {!me && open && <p className="hint">No account needed to fill it out. You&rsquo;ll sign up when you submit, and your picks are kept.</p>}
 
       {open && (
         <div className="submitbar">
+          <Err>{err}</Err>
           <div className="submitbar-in">
-            <span className="submit-count"><span><b>{made}</b> of {count} picked{skipped.length > 0 && ` · ${skipped.length} blank`}{dirty && submitted ? ' · unsaved changes' : ''}</span>
-              <span className="submit-sub">Editable until {formatET(pool.deadline)}</span></span>
-            <Err>{err}</Err>
+            <span className="submit-count">
+              {submitted && !dirty ? <>Submitted{stamp && ` ${stamp}`} ✓</> : <><b>{made}</b>/{count} picked</>}
+              {skipped.length > 0 && <span className="muted"> · {skipped.length} blank</span>}
+            </span>
             <button type="button" className="btn submit" disabled={busy || (submitted && !dirty)} onClick={submit}>
-              {busy ? 'Saving…' : !account.signedIn ? `Sign up to submit · ${usd(price)}` : submitted ? (dirty ? `Save changes · ${usd(price)}` : 'Submitted ✓') : skipped.length ? `Submit what I have · ${usd(price)}` : `Submit ballot · ${usd(price)}`}
+              {busy ? 'Saving…' : !account.signedIn ? `Sign up to submit · ${usd(price)}` : submitted ? (dirty ? `Save · ${usd(price)}` : 'Saved') : `Submit · ${usd(price)}`}
             </button>
           </div>
         </div>
       )}
-      {open && submitted && (
-        <p style={{ marginTop: 16 }}><button type="button" className="linklike danger-link" disabled={busy} onClick={withdraw}>Withdraw my ballot</button></p>
-      )}
-      {!me && open && <p className="hint">You can fill this out now. Signing up (name, mobile, password) is only needed to submit; your picks are kept.</p>}
     </main>
   )
 }

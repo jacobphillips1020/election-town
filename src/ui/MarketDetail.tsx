@@ -3,19 +3,27 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
-import { lastName } from '../domain/board'
-import { formatET, plural, usd } from '../domain/format'
+import { lastName, type BoardPolling } from '../domain/board'
+import { formatET, usd } from '../domain/format'
 import { checkPick, draftFromBallot, isSeat, raceLinks, sideOf, type PickDraft } from '../domain/pool'
 import type { Entry, Market, MarketDetail, Payout, PollSnapshot, Run } from '../domain/types'
 import { refreshMarket } from '../polling/client'
 import { Err, Loading, PhasePill, StripPlot, partyVar } from './common'
 import { Links, RacePick } from './Pick'
 
+type BoardRow = { race_type: string; state: string; district: string | null; special: boolean; polling: BoardPolling | null }
+const boardFor = (rows: BoardRow[] | null, m: Market): BoardPolling | null => {
+  const ref = m.polling_ref
+  if (!ref || !rows) return null
+  return rows.find((r) => r.race_type === ref.race_type && r.state === ref.state && (r.district ?? null) === (ref.district ?? null) && r.special === ref.special)?.polling ?? null
+}
+
 export function MarketPage() {
   const { id } = useParams()
   const { backend } = useApp()
   const isNew = new URLSearchParams(useLocation().search).get('new') === '1'
   const { data, error, loading, reload } = useRpc<MarketDetail>('get_market', { p_id: id })
+  const board = useRpc<BoardRow[]>('race_board')
   // Ask the server to refresh this race's polling (it caches for 6 hours).
   useEffect(() => {
     if (id) refreshMarket(backend, id).then((r) => r?.status === 'refreshed' && reload())
@@ -37,21 +45,21 @@ export function MarketPage() {
       <p className="muted" style={{ marginTop: 6 }}>
         {m.featured ? 'On the main ballot' : `Side bet${m.proposed_by_name ? ` opened by ${m.proposed_by_name}` : ''}`}
         {' · '}{m.featured
-          ? <>{plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot</>
-          : <>{usd(m.buy_in_cents ?? 0)} a pick · {plural(m.entrants, 'pick')} · <b>{usd(m.pool_cents)}</b> pot</>}
+          ? <>{m.entrants} in · <b>{usd(m.pool_cents)}</b> pot</>
+          : <>{usd(m.buy_in_cents ?? 0)} · {m.entrants} in · <b>{usd(m.pool_cents)}</b> pot</>}
         {' · '}{phase === 'open' ? `closes ${formatET(m.entry_deadline)}` : phase === 'canceled' ? 'canceled' : `closed ${formatET(m.entry_deadline)}`}
       </p>
       <Err>{error}</Err>
 
       {isNew && phase === 'open' && !data.my_entry && (
-        <p className="callout" role="status"><strong>Side bet open.</strong> Make your pick below, then invite friends with the link.</p>
+        <p className="callout" role="status"><strong>It&rsquo;s open.</strong> Make your pick, then send friends the link.</p>
       )}
       {phase === 'canceled' && <p className="callout">Canceled{m.cancel_reason ? `: ${m.cancel_reason}` : ''}. Everyone&rsquo;s stake was returned.</p>}
-      {phase === 'open' && (m.featured ? <OnBallot d={data} /> : <SideEntry d={data} reload={reload} />)}
+      {phase === 'open' && (m.featured ? <OnBallot d={data} /> : <SideEntry d={data} reload={reload} polling={boardFor(board.data, m)} />)}
       {phase === 'open' && !m.featured && <Invite m={m} />}
       {(phase === 'closed' || phase === 'settled') && <Reveal d={data} />}
 
-      {!isSeat(m) && m.kind !== 'congress' && <PollingBlock snap={data.polling.at_close ?? data.polling.latest} closed={phase !== 'open'} m={m} />}
+      {!isSeat(m) && m.kind !== 'congress' && <PollingBlock snap={data.polling.at_close ?? data.polling.latest} fallback={boardFor(board.data, m)} closed={phase !== 'open'} m={m} />}
       <Rules m={m} />
     </main>
   )
@@ -63,14 +71,14 @@ function OnBallot({ d }: { d: MarketDetail }) {
   const mine = e ? draftFromBallot({ [m.id]: { winner_id: e.winner_id, shares: e.shares as Record<string, number> | null, seats: e.seats as { r: number } | null } })[m.id] : null
   return (
     <div className="callout">
-      This pick is on the main ballot{mine ? <>: you picked <b>{mine.r ? `${mine.r} Republican seats` : `${m.candidates.find((c) => c.id === mine.winner)?.name} ${mine.share}%`}</b>.</> : e ? ': you left it blank so far.' : '.'}
-      {' '}<Link to="/ballot">{mine ? 'Change it on your ballot' : e ? 'Fill it in on your ballot' : 'Fill out your ballot'}</Link>
-      <span className="muted"> · Picks are sealed until the pool closes.</span>
+      {mine ? <>Your pick: <b>{mine.r ? `${mine.r} Republican seats` : `${m.candidates.find((c) => c.id === mine.winner)?.name} ${mine.share}%`}</b>. </> : e ? 'You left this one blank. ' : ''}
+      <Link to="/ballot">{mine ? 'Change it' : e ? 'Fill it in' : 'Fill out your ballot'}</Link>
+      <span className="muted"> · Picks are hidden until the close.</span>
     </div>
   )
 }
 
-function SideEntry({ d, reload }: { d: MarketDetail; reload: () => void }) {
+function SideEntry({ d, reload, polling }: { d: MarketDetail; reload: () => void; polling: BoardPolling | null }) {
   const { backend } = useApp()
   const { signedIn, isMember, signupPath } = useAccount()
   const loc = useLocation()
@@ -82,9 +90,6 @@ function SideEntry({ d, reload }: { d: MarketDetail; reload: () => void }) {
   const [err, setErr] = useState('')
   const [saved, setSaved] = useState(false)
   const check = checkPick(m, value)
-  const board = useRpc<{ race_type: string; state: string; district: string | null; special: boolean; polling: null | { dem_avg: number | null; rep_avg: number | null } & Record<string, unknown> }[]>('race_board')
-  const ref = m.polling_ref
-  const row = ref ? board.data?.find((r) => r.race_type === ref.race_type && r.state === ref.state && (r.district ?? null) === (ref.district ?? null) && r.special === ref.special) : undefined
 
   async function save() {
     if (!check.ok) return setErr(check.reason)
@@ -104,7 +109,7 @@ function SideEntry({ d, reload }: { d: MarketDetail; reload: () => void }) {
   return (
     <section className="section">
       <h2>{e ? 'Your pick' : 'Make your pick'}</h2>
-      <RacePick m={m} polling={(row?.polling as never) ?? null} value={value} onChange={(v) => { setSaved(false); setValue(v) }} />
+      <RacePick m={m} polling={polling} value={value} onChange={(v) => { setSaved(false); setValue(v) }} />
       <Err>{err}</Err>
       {saved && <p className="ok" role="status">Saved. You can change it until {formatET(m.entry_deadline)}.</p>}
       <div className="row" style={{ marginTop: 10 }}>
@@ -113,7 +118,7 @@ function SideEntry({ d, reload }: { d: MarketDetail; reload: () => void }) {
           : <button className="btn" disabled={busy || !check.ok} onClick={save}>{e ? 'Save changes' : `Make pick · ${usd(m.buy_in_cents ?? 0)}`}</button>}
         {e && <button className="btn ghost" disabled={busy} onClick={withdraw}>Withdraw</button>}
       </div>
-      <p className="hint">Picks are sealed until this bet closes. You can change or withdraw yours until then.</p>
+      <p className="hint">Picks stay hidden until it closes. You can change yours until then.</p>
     </section>
   )
 }
@@ -135,13 +140,13 @@ function Invite({ m }: { m: Market }) {
   return (
     <section className="section">
       <h2>Invite friends</h2>
-      <p className="small">Send the link to whoever you want in. Anyone in the group can join.</p>
+      <p className="small">Send the link to anyone you want in.</p>
       <div className="row">
         <button type="button" className="btn ghost" onClick={go}>Share invite</button>
         <a className="btn ghost" href={`sms:?&body=${encodeURIComponent(`${text} ${url}`)}`}>Text it</a>
       </div>
       {msg && <p className="small ok" role="status">{msg}</p>}
-      <p className="hint">Want a different stake than {usd(m.buy_in_cents ?? 0)}? Ask {admin}; they can change it.</p>
+      <p className="hint">Want a different stake? Ask {admin}.</p>
     </section>
   )
 }
@@ -159,7 +164,7 @@ function Reveal({ d }: { d: MarketDetail }) {
       <section className="section">
         <h2>Picks revealed</h2>
         <p className="callout">
-          {plural(m.entrants, 'pick')} {m.entrants === 1 ? 'is' : 'are'} in; the group sees who picked what.
+          {m.entrants} in. Members can see who picked what.
           {!signedIn && <> <Link to={signupPath(loc.pathname)}>Sign up</Link> to see them.</>}
         </p>
       </section>
@@ -289,8 +294,12 @@ function SeatReveal({ m, entries, pay, settled, run }: { m: Market; entries: Ent
 
 /* -------------------------------------------------------------- polling + rules */
 
-function PollingBlock({ snap, closed, m }: { snap: PollSnapshot | null; closed: boolean; m: Market }) {
-  const c = snap?.data.candidates ?? []
+function PollingBlock({ snap, fallback, closed, m }: { snap: PollSnapshot | null; fallback: BoardPolling | null; closed: boolean; m: Market }) {
+  // Prefer the stored snapshot (it's what counts at the close); otherwise the same race-board numbers the pick uses.
+  const c = snap?.data.candidates?.length ? snap.data.candidates
+    : fallback?.dem_avg != null && fallback.rep_avg != null
+      ? [{ name: m.candidates[0]?.name ?? 'Democrat', party: m.candidates[0]?.party, pct: fallback.dem_avg }, { name: m.candidates[1]?.name ?? 'Republican', party: m.candidates[1]?.party, pct: fallback.rep_avg }]
+      : []
   return (
     <section className="section">
       <h2>{closed ? 'Polling at the close' : 'Polling'}</h2>
@@ -301,10 +310,10 @@ function PollingBlock({ snap, closed, m }: { snap: PollSnapshot | null; closed: 
               <li key={i}><span>{x.name}</span><span style={{ color: partyVar(x.party ?? sideOf(m.candidates[i])), fontWeight: 800 }}>{x.party ?? ''}</span><span className="mu-num">{x.pct.toFixed(1)}%</span></li>
             ))}
           </ul>
-          <p className="hint">{snap!.source_name}, as of {snap!.as_of}. {snap!.data.note}</p>
+          <p className="hint">PollingSource average{snap?.data.candidates?.length ? `, as of ${snap.as_of}` : fallback?.last_poll_date ? `, latest poll ${new Date(fallback.last_poll_date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.</p>
         </>
       )}
-      <Links links={raceLinks(m, snap?.source_url)} />
+      <Links links={raceLinks(m, snap?.source_url || fallback?.page)} />
     </section>
   )
 }
@@ -313,16 +322,19 @@ function Rules({ m }: { m: Market }) {
   return (
     <section className="section">
       <h2>Rules</h2>
-      <p className="small">{m.rules_note}</p>
-      <p className="small muted">
-        {m.featured
-          ? <>Every ballot puts {usd((m.buy_in_cents ?? 0) / 2)} into this pot; $50 ballots put in {usd(m.buy_in_cents ?? 0)}. The first half of the pot
-              {' '}goes to the best call among everyone; the second half to the best call among $50 ballots. If nobody in a half
-              {' '}called it, that half is refunded. </>
-          : <>{usd(m.buy_in_cents ?? 0)} a pick. </>}
-        Change or withdraw until {formatET(m.entry_deadline)}; picks are sealed until then.
-        Fewer than two picks at the close: everyone is refunded. No money moves through this site.
+      <p className="small">
+        {isSeat(m) ? 'Closest Republican seat count wins the pot.' : 'Right winner first; then the closest two-way vote share wins the pot.'}
+        {m.featured && ' Everyone plays for the first half of the pot; only $50 ballots play for the second half.'}
       </p>
+      <details className="rules-more">
+        <summary>Full rules</summary>
+        <p className="small">{m.rules_note}</p>
+        <p className="small muted">
+          {m.featured ? <>Each ballot puts {usd((m.buy_in_cents ?? 0) / 2)} ($25 ballots) or {usd(m.buy_in_cents ?? 0)} ($50 ballots) into this pot. </> : <>{usd(m.buy_in_cents ?? 0)} a pick. </>}
+          If nobody in a half called it, that half is refunded. Fewer than two people in: everyone is refunded.
+          Picks can change until {formatET(m.entry_deadline)} and stay hidden until then. No money moves through this site.
+        </p>
+      </details>
     </section>
   )
 }

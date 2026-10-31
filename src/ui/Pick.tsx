@@ -52,7 +52,8 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
   const share = parseFloat(value?.share ?? '')
   // The share box takes the winner's color, deeper the bigger the win (pale near 50%).
   const ws = w ? sideOf(w) : null
-  const boxBg = ws && Number.isFinite(share) && share > 50 ? leanColor(ws === 'R' ? shareLean(share) : -shareLean(share), ws === 'I' ? 'I' : 'D') : null
+  // Plain white for a coin-flip call (so it doesn't look disabled); tinted once the margin is a point or more.
+  const boxBg = ws && Number.isFinite(share) && share >= 50.5 ? leanColor((ws === 'R' ? 1 : -1) * (0.34 + 0.66 * shareLean(share)), ws === 'I' ? 'I' : 'D') : null
   const choose = (id: string) => {
     if (disabled) return
     const p = polls?.[id]
@@ -68,17 +69,11 @@ export function RacePick({ m, polling, value, onChange, disabled }: {
             <button key={c.id} type="button" role="radio" aria-checked={on} disabled={disabled}
               className={`cand cand-${s.toLowerCase()}${on ? ' on' : ''}`} onClick={() => choose(c.id)}>
               <span className="cand-name">{c.name}</span>
-              <span className="cand-meta">{s === 'I' ? 'Independent' : s === 'D' ? 'Democrat' : 'Republican'}{polls && ` · ${polls[c.id].toFixed(1)}% two-way in polls`}</span>
+              <span className="cand-meta">{s === 'I' ? 'Independent' : s === 'D' ? 'Democrat' : 'Republican'}{polls && ` · polls ${polls[c.id].toFixed(1)}%`}</span>
             </button>
           )
         })}
       </div>
-      {polls && polling?.dem_avg != null && polling.rep_avg != null && (
-        <p className="twoway">
-          Polls: {lastName(m.candidates[0].name, m.candidates[0].name)} {polling.dem_avg.toFixed(1)}, {lastName(m.candidates[1].name, m.candidates[1].name)} {polling.rep_avg.toFixed(1)}
-          {' '}→ <b>{polls[m.candidates[0].id].toFixed(1)} to {polls[m.candidates[1].id].toFixed(1)}</b> two-way
-        </p>
-      )}
       {w && (
         <div className="share">
           <label htmlFor={`share-${m.id}`}>{lastName(w.name, w.name)}&rsquo;s two-way vote share</label>

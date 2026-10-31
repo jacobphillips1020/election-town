@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAdminName, useRpc } from '../data/context'
 import { boardKey, type BoardRace } from '../domain/board'
-import { formatET, plural, usd } from '../domain/format'
+import { formatET, usd } from '../domain/format'
 import type { Market, Phase } from '../domain/types'
 import { Err, Loading, PhasePill } from './common'
 import { MatchupBar } from './RaceBoard'
@@ -32,9 +32,8 @@ export function SideBetsPage() {
         <Link to="/open" className="btn">Open a side bet</Link>
       </div>
       <p className="lede">
-        Any race that isn&rsquo;t on the main ballot: a House seat, a governor, another Senate race. Pick the winner and their
-        share of the two-way vote; the closest share among those who picked the winner takes the pot. Usually $5. Want a
-        different stake? Ask {admin}. Open one, then send the link to the friends you want in.
+        Bet on any other race. $5, same rules as the ballot. Open one and send friends the link.
+        Want a different stake? Ask {admin}.
       </p>
       <div className="filters" role="group" aria-label="Status">
         {TABS.map((x) => (
@@ -59,7 +58,7 @@ export function SideBetsPage() {
                   </div>
                   {r?.polling?.dem_avg != null && r.polling.rep_avg != null && <MatchupBar key={boardKey(r)} r={r} />}
                   <div className="mrow-meta">
-                    <span><b>{plural(m.entrants, 'pick')}</b> · {usd(m.pool_cents)} pot</span>
+                    <span><b>{m.entrants} in</b> · {usd(m.pool_cents)} pot</span>
                     <span>{usd(m.buy_in_cents ?? 0)} stake</span>
                     <span>{m.phase === 'open' ? `closes ${formatET(m.entry_deadline)}` : m.phase === 'closed' ? 'picks revealed · awaiting results' : m.phase === 'settled' ? 'settled' : 'canceled'}</span>
                     {m.has_entry && <span className="ok">You&rsquo;re in</span>}

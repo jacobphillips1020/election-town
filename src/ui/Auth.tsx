@@ -71,6 +71,7 @@ export function AuthPage() {
     <main className="page" id="main" style={{ maxWidth: '26rem' }}>
       <h1>{mode === 'up' ? 'Sign up to play' : mode === 'in' ? 'Sign in' : 'Forgot your password?'}</h1>
       {mode === 'up' && <p className="muted">A name your friends will see and a number the organizer can text. That&rsquo;s it.</p>}
+      {mode === 'up' && next === '/ballot' && <p className="callout ok-callout">Your picks are saved. You&rsquo;ll be back on your ballot after this.</p>}
       {mode === 'forgot' ? (
         <p>Text the organizer and ask them to reset your password; they&rsquo;ll send you a temporary one.</p>
       ) : (
