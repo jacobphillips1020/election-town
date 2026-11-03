@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { AUTH_STUB, MIGRATIONS } from '../src/data/migrations'
 import { rpc, select } from '../src/data/pgliteRpc'
+import { JUST_AFTER_ELECTION_DAY_START, POOL_DEADLINE, electionDayHasStarted, hoursFromClose, setTestClock } from './testClock'
 
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const U = { jake: id(1), maya: id(2), dev: id(3), priya: id(4), sam: id(6) }
@@ -30,6 +31,7 @@ beforeEach(async () => {
   db = new PGlite()
   await db.exec(AUTH_STUB)
   for (const m of MIGRATIONS) await db.exec(m)
+  await setTestClock(db)
   await db.exec('update public.group_settings set open_signup = false')
   for (const [k, uid] of Object.entries(U)) {
     await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`, [
@@ -70,8 +72,7 @@ describe('the slate', () => {
     expect(p.ballot_cents).toBe(5000)
     expect(p.markets.filter((m) => m.kind === 'senate').every((m) => m.buy_in_cents === 400 && !m.has_other)).toBe(true)
     expect(p.markets.filter((m) => m.kind !== 'senate').every((m) => m.buy_in_cents === 500)).toBe(true)
-    // Oct 27, 11:59 p.m. ET for databases created before then (the live one); the original default after that.
-    expect(new Date(p.deadline).toISOString()).toBe(Date.now() < Date.parse('2026-10-28T03:59:00Z') ? '2026-10-28T03:59:00.000Z' : '2026-11-03T01:00:00.000Z')
+    expect(new Date(p.deadline).toISOString()).toBe(POOL_DEADLINE)
     const ne = p.markets.find((m) => m.title === 'Nebraska Senate')!
     expect(ne.candidates.map((c) => [c.name, c.party])).toEqual([['Dan Osborn', 'I'], ['Pete Ricketts', 'R']])
     expect(p.senate).toHaveLength(35)
@@ -80,12 +81,28 @@ describe('the slate', () => {
     expect(cong.phase).toBe('canceled')
   })
 
+  test('the migrations set the real closing time and Election Day', async () => {
+    const fresh = new PGlite() // no test clock here: these are the values the live database gets
+    await fresh.exec(AUTH_STUB)
+    for (const m of MIGRATIONS) await fresh.exec(m)
+    // Oct 27, 11:59 p.m. ET for databases created before then (the live one); the original default after that.
+    const expected = Date.now() < Date.parse('2026-10-28T03:59:00Z') ? '2026-10-28T03:59:00.000Z' : '2026-11-03T01:00:00.000Z'
+    const iso = (d: Date) => d.toISOString()
+    const g = (await fresh.query<{ deadline: Date; election: Date }>(
+      `select default_deadline deadline, app.election_day_start() election from public.group_settings`)).rows[0]
+    expect([iso(g.deadline), iso(g.election)]).toEqual([expected, '2026-11-03T05:00:00.000Z'])
+    const featured = (await fresh.query<{ entry_deadline: Date }>(`select entry_deadline from public.markets where featured`)).rows
+    expect(featured).toHaveLength(12)
+    expect(new Set(featured.map((m) => iso(m.entry_deadline)))).toEqual(new Set([expected]))
+  })
+
   test('the retired Congress market refunded what was in it', async () => {
     // Re-run the slate migration on a database where the Congress market had an entry.
     const fresh = new PGlite()
     await fresh.exec(AUTH_STUB)
     const poolAt = MIGRATIONS.findIndex((m) => /Election Town v2: the main pool/.test(m))
     for (const m of MIGRATIONS.slice(0, poolAt)) await fresh.exec(m)
+    await setTestClock(fresh)
     await fresh.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'a@example.test', '{"display_name":"A"}')`, [U.maya])
     const cong = (await fresh.query<{ id: string }>(`select id from public.markets where kind = 'congress'`)).rows[0].id
     await rpc(fresh, U.maya, 'submit_entry', { p_market: cong, p_seats: { house: { d: 220, r: 215, o: 0 }, senate: { d: 49, r: 50, o: 1 } } })
@@ -239,6 +256,27 @@ describe('scoring', () => {
     expect([by[U.maya].gross_cents, by[U.dev].gross_cents, by[U.priya].gross_cents, by[U.jake].gross_cents]).toEqual([1000, 1000, 0, 0])
     expect([by[U.maya].error_value, by[U.dev].error_value, by[U.priya].error_value]).toEqual([1, 1, 4])
   })
+
+  test('results can be entered, settled and corrected once Election Day has started', async () => {
+    const ia = await byKind('senate', 'Iowa')
+    const sen = await byKind('senate_seats')
+    await submit(U.maya, await ballot(518, 47))
+    await submit(U.dev, await ballot(560, 52))
+    await closePool()
+    await electionDayHasStarted(db)
+    const gross = async (mid: string) => {
+      const m = await rpc<{ payouts: { user_id: string; gross_cents: number }[] }>(db, U.jake, 'get_market', { p_id: mid })
+      return Object.fromEntries(m.payouts.map((x) => [x.user_id, x.gross_cents]))
+    }
+    await rpc(db, U.jake, 'enter_result', { p_market: ia.id, p_winner: 'c1', p_share_tenths: 515, p_seats: null, p_source_url: 'https://example.test/ia' })
+    await rpc(db, U.jake, 'confirm_settlement', { p_market: ia.id })
+    expect(await gross(ia.id)).toEqual({ [U.maya]: 800, [U.dev]: 0 })
+    await rpc(db, U.jake, 'enter_result', { p_market: sen.id, p_winner: null, p_share_tenths: null, p_seats: { r: 51 }, p_source_url: 'https://example.test/s' })
+    await rpc(db, U.jake, 'confirm_settlement', { p_market: sen.id })
+    expect(await gross(sen.id)).toEqual({ [U.maya]: 0, [U.dev]: 1000 })
+    await rpc(db, U.jake, 'correct_settlement', { p_market: ia.id, p_expected_version: 1, p_winner: 'c1', p_share_tenths: 562, p_seats: null, p_source_url: 'https://example.test/recount', p_reason: 'Recount' })
+    expect(await gross(ia.id)).toEqual({ [U.maya]: 0, [U.dev]: 800 })
+  })
 })
 
 describe('admin controls', () => {
@@ -246,9 +284,9 @@ describe('admin controls', () => {
     await boardNames('house:NY:17:0', 'Pat Example', 'Lee Sample')
     const side = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'NY', p_district: '17' })
     await submit(U.maya, await ballot())
-    const t = '2026-11-01T22:00:00.000Z'
+    const t = hoursFromClose(-27)
     await expect(rpc(db, U.maya, 'set_pool_terms', { p_deadline: t, p_race_buy_in_cents: 500, p_seat_buy_in_cents: 500 })).rejects.toThrow(/admin only/i)
-    await expect(rpc(db, U.jake, 'set_pool_terms', { p_deadline: '2026-11-03T05:00:01Z', p_race_buy_in_cents: 400, p_seat_buy_in_cents: 500 })).rejects.toThrow(/before Election Day/)
+    await expect(rpc(db, U.jake, 'set_pool_terms', { p_deadline: JUST_AFTER_ELECTION_DAY_START, p_race_buy_in_cents: 400, p_seat_buy_in_cents: 500 })).rejects.toThrow(/before Election Day/)
     await rpc(db, U.jake, 'set_pool_terms', { p_deadline: t, p_race_buy_in_cents: 500, p_seat_buy_in_cents: 500 })
     const p = await pool()
     expect(new Date(p.deadline).toISOString()).toBe(t)
@@ -263,12 +301,13 @@ describe('admin controls', () => {
     await boardNames('house:NY:17:0', 'Pat Example', 'Lee Sample')
     const side = await rpc<string>(db, U.maya, 'launch_race', { p_race_type: 'house', p_state: 'NY', p_district: '17' })
     await rpc(db, U.maya, 'submit_entry', { p_market: side, p_winner: 'c1', p_shares: { c1: 520, c2: 480 } })
-    await expect(rpc(db, U.maya, 'set_market_terms', { p_id: side, p_buy_in_cents: 2000, p_deadline: '2026-11-02T00:00:00Z' })).rejects.toThrow(/admin only/i)
-    await rpc(db, U.jake, 'set_market_terms', { p_id: side, p_buy_in_cents: 2000, p_deadline: '2026-11-02T00:00:00Z' })
+    const t = hoursFromClose(-25)
+    await expect(rpc(db, U.maya, 'set_market_terms', { p_id: side, p_buy_in_cents: 2000, p_deadline: t })).rejects.toThrow(/admin only/i)
+    await rpc(db, U.jake, 'set_market_terms', { p_id: side, p_buy_in_cents: 2000, p_deadline: t })
     const led = await rpc<{ totals: { unresolved_cents: number } }>(db, U.maya, 'my_ledger')
     expect(led.totals.unresolved_cents).toBe(2000)
     const ia = await byKind('senate', 'Iowa')
-    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: ia.id, p_buy_in_cents: 2000, p_deadline: '2026-11-02T00:00:00Z' })).rejects.toThrow(/pool's stakes/)
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: ia.id, p_buy_in_cents: 2000, p_deadline: t })).rejects.toThrow(/pool's stakes/)
   })
 
   test('payment note: admin sets it, members read it', async () => {
@@ -408,6 +447,6 @@ describe('two ballot sizes: $25 and $50', () => {
   })
 
   test('stakes must split evenly in half', async () => {
-    await expect(rpc(db, U.jake, 'set_pool_terms', { p_deadline: '2026-11-03T04:00:00Z', p_race_buy_in_cents: 401, p_seat_buy_in_cents: 500 })).rejects.toThrow(/split evenly/)
+    await expect(rpc(db, U.jake, 'set_pool_terms', { p_deadline: hoursFromClose(3), p_race_buy_in_cents: 401, p_seat_buy_in_cents: 500 })).rejects.toThrow(/split evenly/)
   })
 })

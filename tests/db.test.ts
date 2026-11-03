@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { AUTH_STUB, MIGRATIONS } from '../src/data/migrations'
 import { rpc, select } from '../src/data/pgliteRpc'
+import { JUST_AFTER_ELECTION_DAY_START, POOL_DEADLINE, hoursFromClose, setTestClock } from './testClock'
 
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
 const U = { jake: id(1), maya: id(2), dev: id(3), priya: id(4), alex: id(5), sam: id(6) }
@@ -18,6 +19,7 @@ beforeEach(async () => {
   db = new PGlite()
   await db.exec(AUTH_STUB)
   for (const m of MIGRATIONS) await db.exec(m)
+  await setTestClock(db)
   // Fixtures use invitations; open sign-up has its own tests below.
   await db.exec('update public.group_settings set open_signup = false')
   for (const [k, uid] of Object.entries(U)) {
@@ -267,12 +269,12 @@ describe('closing boundary and locked terms', () => {
   test('deadlines must be in the future and before Election Day', async () => {
     const mid = await proposedMarket('house', 'TX', '01', [{ id: 'c1', name: 'A', party: 'D' }, { id: 'c2', name: 'B', party: 'R' }])
     const base = { p_id: mid, p_candidates: CANDS, p_has_other: true, p_basis: 'single_round', p_rules_note: 'x', p_buy_in_cents: 1000 }
-    await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
+    await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: JUST_AFTER_ELECTION_DAY_START })).rejects.toThrow(/before Election Day/i)
     await expect(rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
-    await rpc(db, U.jake, 'approve_market', { ...base, p_deadline: '2026-11-03T01:00:00Z' })
-    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: '2026-11-03T05:00:01Z' })).rejects.toThrow(/before Election Day/i)
+    await rpc(db, U.jake, 'approve_market', { ...base, p_deadline: POOL_DEADLINE })
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: JUST_AFTER_ELECTION_DAY_START })).rejects.toThrow(/before Election Day/i)
     await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 1000, p_deadline: '2020-01-01T00:00:00Z' })).rejects.toThrow(/future/i)
-    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 50, p_deadline: '2026-11-03T00:00:00Z' })).rejects.toThrow(/between \$1/i)
+    await expect(rpc(db, U.jake, 'set_market_terms', { p_id: mid, p_buy_in_cents: 50, p_deadline: hoursFromClose(-1) })).rejects.toThrow(/between \$1/i)
   })
 })
 
@@ -537,7 +539,7 @@ describe('launching a market', () => {
       title: 'AZ-01 House', jurisdiction: 'Arizona — District 1', phase: 'open', outcome_basis: 'single_round', has_other: false,
       buy_in_cents: 500, polling_ref: { race_type: 'house', state: 'AZ', district: '01', special: false },
     })
-    expect(new Date(m.entry_deadline).toISOString()).toBe(Date.now() < Date.parse('2026-10-28T03:59:00Z') ? '2026-10-28T03:59:00.000Z' : '2026-11-03T01:00:00.000Z')
+    expect(new Date(m.entry_deadline).toISOString()).toBe(POOL_DEADLINE) // the group default
     expect(m.candidates.map((c: { name: string }) => c.name)).toEqual(['Pat Example', 'Lee Sample'])
     expect(m.rules_note).toMatch(/two-way vote share.*certified results published by Arizona/)
     // the launcher can bet straight away

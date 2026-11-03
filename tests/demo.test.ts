@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { AUTH_STUB, MIGRATIONS } from '../src/data/migrations'
 import { rpc } from '../src/data/pgliteRpc'
+import { setTestClock } from './testClock'
 
 const P = (n: number) => `d0000000-0000-4000-8000-00000000000${n}`
 
@@ -10,6 +11,7 @@ test('demo seed loads: pool open with sealed ballots; side bets open, closed, se
   const db = new PGlite()
   await db.exec(AUTH_STUB)
   for (const m of MIGRATIONS) await db.exec(m)
+  await setTestClock(db)
   await db.exec(readFileSync('src/demo/polling.sql', 'utf8'))
   await db.exec(readFileSync('src/demo/seed.sql', 'utf8'))
 
