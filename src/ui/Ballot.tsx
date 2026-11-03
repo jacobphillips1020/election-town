@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAccount, useAdminName, useApp, useRpc } from '../data/context'
 import { formatET, usd } from '../domain/format'
 import { RATINGS_LINKS, buildBallot, checkPick, draftFromBallot, isBlank, raceLinks, sideOf, type Draft, type Pool, type PoolMarket, type Tier } from '../domain/pool'
-import { HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, senateKey, senateR, type Side } from '../domain/senate'
+import { HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, impliedSenateR, senateKey, senateR, type Side } from '../domain/senate'
 import { Err, Loading } from './common'
 import { Invite, PayNote } from './Invite'
 import { Experts, Links, RacePick, SeatPick } from './Pick'
@@ -70,7 +70,10 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   const races = pool.markets.filter((m) => m.kind === 'senate')
   const seatSen = pool.markets.find((m) => m.kind === 'senate_seats')
   const seatHouse = pool.markets.find((m) => m.kind === 'house_seats')
-  const implied = senateR(pool.senate, pickedSides(pool.markets, draft))
+  const sides = pickedSides(pool.markets, draft)
+  const implied = impliedSenateR(pool.senate, sides)
+  const rPicks = Object.values(sides).filter((s) => s === 'R').length
+  const racesPicked = Object.keys(sides).length
   const pollsR = senateR(pool.senate)
 
   // The Senate seat pick follows your race picks until you set it yourself.
@@ -222,10 +225,12 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
           <li id={`pick-${seatSen.id}`} className={`ballot-item${tried && !checkPick(seatSen, effective[seatSen.id]).ok ? ' bad' : ''}`}>
             <div className="bi-head"><span className="bi-num">{races.length + 1}</span><h3>Senate</h3></div>
             <p className="implied">
-              Your race picks add up to <b>{implied}</b>.{' '}
+              {racesPicked === 0
+                ? <>Republicans hold <b>{implied}</b> today. Your race picks will move this.</>
+                : <>{implied - rPicks} safe-ish seats + your {rPicks} Republican {rPicks === 1 ? 'pick' : 'picks'} = <b>{implied}</b>.{racesPicked < races.length && ' Blank races count for whoever holds them now.'}</>}{' '}
               {draft[seatSen.id]?.touched && +(effective[seatSen.id]?.r ?? '') !== implied
                 ? <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>Use {implied}</button>
-                : 'Change it if you like.'}
+                : racesPicked > 0 && 'Change it if you like.'}
             </p>
             <SeatPick id={seatSen.id} chamber="senate" min={35} max={65} disabled={!open} value={effective[seatSen.id]?.r}
               onChange={(r) => set(seatSen.id, { r, touched: true })} />

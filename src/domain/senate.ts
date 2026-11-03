@@ -45,6 +45,18 @@ export function senateR(races: SenateRace[], picks: Record<string, Side | undefi
   return races.reduce<number>((n, r) => n + ((picks[senateKey(r.state, r.special)] ?? pollLeader(r)) === 'R' ? 1 : 0), NOT_UP.R)
 }
 
+/**
+ * What a ballot adds up to: Republican seats if each picked race goes as picked and every other race (blank, or not
+ * on the ballot) stays with the party holding it. Picking the current party everywhere gives today's 53. Deliberately
+ * not poll-based, so a thin poll lead in a race nobody picked can't move the number.
+ */
+export function impliedSenateR(races: Pick<SenateRace, 'state' | 'special'>[], picks: Record<string, Side | undefined> = {}): number {
+  return races.reduce<number>((n, r) => {
+    const k = senateKey(r.state, r.special)
+    return n + ((picks[k] ?? HELD_BY[k]) === 'R' ? 1 : 0)
+  }, NOT_UP.R)
+}
+
 /** "R 47 · D 53" style split for a Republican seat count. */
 export function seatSplit(r: number, total: number) {
   return { r, other: total - r }

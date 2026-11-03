@@ -8,7 +8,7 @@ import {
   RATINGS_LINKS, draftFromBallot, levelFromConsensus, levelFromMargin, levelFromPick, raceLinks, sideOf, tone,
   type Draft, type Pool, type PoolMarket, type SenateRow,
 } from '../domain/pool'
-import { HELD_BY, HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, leftSide, pollLeader, senateKey, senateR, type Side } from '../domain/senate'
+import { HELD_BY, HOUSE_2024_R, HOUSE_MAJORITY, SENATE_NOW_R, impliedSenateR, leftSide, pollLeader, senateKey, senateR, type Side } from '../domain/senate'
 import { stateName } from '../domain/states'
 import type { Market } from '../domain/types'
 import { refreshBoardApi } from '../polling/client'
@@ -86,7 +86,7 @@ function Dashboard({ pool }: { pool: Pool }) {
           { label: 'Now', r: SENATE_NOW_R },
           { label: 'Polls', r: senateR(pool.senate) },
           { label: 'Markets', r: pool.forecasts.senate?.r_median ?? null, note: pool.forecasts.senate?.d_control_pct != null ? `Polymarket: Dems ${Math.round(pool.forecasts.senate.d_control_pct)}% to win` : 'Polymarket' },
-          { label: 'You', r: myR(seatSen) ?? (mine ? senateR(pool.senate, pickedSides(pool.markets, mine)) : null), strong: true },
+          { label: 'You', r: myR(seatSen) ?? (mine ? impliedSenateR(pool.senate, pickedSides(pool.markets, mine)) : null), strong: true },
           { label: 'Group', r: seatSen?.tally?.r_mean ?? null, note: seatSen?.tally ? `average of ${plural(seatSen.tally.n, 'ballot')}` : undefined, strong: true },
         ]} />
       </section>
