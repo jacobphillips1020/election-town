@@ -227,10 +227,12 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
             <p className="implied">
               {racesPicked === 0
                 ? <>Republicans hold <b>{implied}</b> today. Your race picks will move this.</>
-                : <>{implied - rPicks} safe-ish seats + your {rPicks} Republican {rPicks === 1 ? 'pick' : 'picks'} = <b>{implied}</b>.{racesPicked < races.length && ' Blank races count for whoever holds them now.'}</>}{' '}
+                : <>Republicans hold {implied - rPicks} seats outside the {racesPicked === 1 ? 'race' : `${racesPicked} races`} you picked. {rPicks === 0
+                    ? `You didn't pick them to win ${racesPicked === 1 ? 'it' : 'any'}, so that's `
+                    : `You picked them to win ${rPicks}, so that's `}<b>{implied}</b>.</>}{' '}
               {draft[seatSen.id]?.touched && +(effective[seatSen.id]?.r ?? '') !== implied
                 ? <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>Use {implied}</button>
-                : racesPicked > 0 && 'Change it if you like.'}
+                : null}
             </p>
             <SeatPick id={seatSen.id} chamber="senate" min={35} max={65} disabled={!open} value={effective[seatSen.id]?.r}
               onChange={(r) => set(seatSen.id, { r, touched: true })} />
