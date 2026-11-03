@@ -72,7 +72,6 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
   const seatHouse = pool.markets.find((m) => m.kind === 'house_seats')
   const sides = pickedSides(pool.markets, draft)
   const implied = impliedSenateR(pool.senate, sides)
-  const rPicks = Object.values(sides).filter((s) => s === 'R').length
   const racesPicked = Object.keys(sides).length
   const pollsR = senateR(pool.senate)
 
@@ -227,9 +226,7 @@ function BallotForm({ pool, reload }: { pool: Pool; reload: () => void }) {
             <p className="implied">
               {racesPicked === 0
                 ? <>Republicans hold <b>{implied}</b> today. Your race picks will move this.</>
-                : <>Republicans hold {implied - rPicks} seats outside the {racesPicked === 1 ? 'race' : `${racesPicked} races`} you picked. {rPicks === 0
-                    ? `You didn't pick them to win ${racesPicked === 1 ? 'it' : 'any'}, so that's `
-                    : `You picked them to win ${rPicks}, so that's `}<b>{implied}</b>.</>}{' '}
+                : <>Your race picks add up to <b>{implied}</b>. This assumes Kansas and South Carolina stay Republican, and there are no other upsets.</>}{' '}
               {draft[seatSen.id]?.touched && +(effective[seatSen.id]?.r ?? '') !== implied
                 ? <button type="button" className="linklike" disabled={!open} onClick={() => set(seatSen.id, { r: String(implied) })}>Use {implied}</button>
                 : null}
