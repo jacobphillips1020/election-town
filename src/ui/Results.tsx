@@ -5,14 +5,14 @@ import { Link } from 'react-router-dom'
 import { useApp, useRpc } from '../data/context'
 import type { Bettor, Density, MemberBet, MembersLive, PublicBet, PublicLive } from '../live/model'
 import { shortName } from '../live/names'
-import { closestGuesses, tickKey, zones, type Zone } from '../live/zones'
+import { tickKey, zones, type Zone } from '../live/zones'
 import { Err, Loading } from './common'
 
 type Payload = { live: PublicLive; members: MembersLive | null; previous: { fetched_at: string; bets: { id: string; p50: number | null }[] } | null }
 
 const lastName = (n: string) => n.trim().split(/\s+/).pop() as string
 const partyColor = (p?: string) => (p === 'R' ? '#b42318' : p === 'I' ? '#8a6a14' : '#1d4f9f')
-const chance = (p: number) => (p > 0.99 && p < 1 ? '>99%' : p >= 1 ? '100%' : p > 0 && p < 0.01 ? '<1%' : `${Math.round(p * 100)}%`)
+const chance = (p: number) => (p > 0.99 ? '>99%' : p < 0.01 ? '<1%' : `${Math.round(p * 100)}%`)
 const dollars = (cents: number) => `${cents < 0 ? '−' : cents > 0 ? '+' : ''}$${Math.abs(Math.round(cents / 100)).toLocaleString('en-US')}`
 const namesText = (names: string[]) => (names.length < 3 ? names.join(' & ') : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`)
 const roughly = (n: number) => (n >= 10000 ? Math.round(n / 1000) * 1000 : Math.round(n / 100) * 100).toLocaleString('en-US')
@@ -59,16 +59,6 @@ function fade(x: Density) {
 }
 const fadeCss = (x: Density) =>
   x.d.length < 2 ? `rgba(${INK}, .85)` : `linear-gradient(to right, ${fade(x).map((s) => `rgba(${INK}, ${s.a}) ${(s.at * 100).toFixed(1)}%`).join(', ')})`
-function alphaAt(x: Density, v: number) {
-  if (x.d.length < 2) return 0.85
-  const pos = ((v - x.lo) / (x.hi - x.lo)) * x.d.length - 0.5
-  if (pos < -0.5 || pos > x.d.length - 0.5) return 0
-  const i = Math.max(0, Math.min(x.d.length - 1, Math.floor(pos)))
-  const j = Math.min(x.d.length - 1, i + 1)
-  const f = Math.max(0, Math.min(1, pos - i))
-  return alpha(x.d[i] * (1 - f) + x.d[j] * f)
-}
-
 // ---------------------------------------------------------------- page
 
 export function ResultsPage() {
@@ -93,9 +83,10 @@ function Results({ data }: { data: Payload }) {
   const isOpen = (b: PublicBet) => !b.settled && (memberOf.has(b.id) ? certainty(b) <= 0.99 : width(b) >= 1)
   const openBets = live.bets.filter(isOpen)
   const openPot = openBets.reduce((a, b) => a + b.pot_cents, 0)
-  // The headline: the race bet furthest from decided.
-  const hero = openBets.filter((b) => b.share).sort((a, b) => certainty(a) - certainty(b))[0]
-  const rest = live.bets.filter((b) => b !== hero)
+  const inOrder = [...live.bets].sort((a, b) => Number(a.side) - Number(b.side) || a.sort_order - b.sort_order)
+  const undecided = inOrder.filter(isOpen)
+  const called = inOrder.filter((b) => !isOpen(b))
+  const before = (b: PublicBet) => previous?.bets.find((x) => x.id === b.id)?.p50 ?? null
   const fetched = new Date(live.fetched_at)
   const stale = Date.now() - fetched.getTime() > 8 * 3600e3
 
@@ -109,22 +100,33 @@ function Results({ data }: { data: Payload }) {
         </p>
       </header>
 
-      {hero && <BetCard bet={hero} m={memberOf.get(hero.id)} me={myName} before={previous?.bets.find((b) => b.id === hero.id)?.p50 ?? null} hero />}
-
       {members ? <BettorTable bettors={members.bettors} me={myName} /> : (
         <section className="lv-card">
-          <h2 className="lv-h2">The money</h2>
+          <h2 className="lv-h2">Scoreboard</h2>
           <p className="small muted">Who’s up and who’s down is for people in the pool. <Link to="/auth?next=/results">Sign in</Link> to see it.</p>
         </section>
       )}
 
-      <p className="small muted lv-key">
-        The shaded bar is where the final margin could land: the darker, the likelier. Black tick: the middle estimate. Lines across the bar mark where one guess takes over from the next, so the shading inside a slice is that guess’s chance.
-        On decided bets, the black line is the final, and each dot is how close a guess came. A +4.0 margin is a 52.0–48.0 split on your ballot. “Called” means a guess is over 99% to win its bet by this estimate. A TV call or a full count doesn’t decide it.
-      </p>
+      {undecided.length > 0 && (
+        <section className="lv-group">
+          <h2 className="lv-group-title">Undecided</h2>
+          <p className="small muted lv-key">
+            The curved bar is where the final number could land: the darker, the likelier. The needle is the middle estimate. White lines mark where one guess takes over from the next, so the shading inside a slice is that guess’s chance.
+            A +4.0 margin is a 52.0–48.0 split on your ballot.
+          </p>
+          <div className="lv-open">{undecided.map((b) => <BetCard key={b.id} bet={b} m={memberOf.get(b.id)} me={myName} before={before(b)} />)}</div>
+        </section>
+      )}
 
-      <BetGroup title="Main ballot" bets={rest.filter((b) => !b.side)} memberOf={memberOf} isOpen={isOpen} certainty={certainty} me={myName} />
-      {rest.some((b) => b.side) && <BetGroup title="Side bets" bets={rest.filter((b) => b.side)} memberOf={memberOf} isOpen={isOpen} certainty={certainty} me={myName} />}
+      {called.length > 0 && (
+        <section className="lv-group lv-called-section">
+          <h2 className="lv-group-title">Called</h2>
+          <p className="small muted lv-key">Over 99% to win the bet by this estimate. A TV call or a full count doesn’t decide it. Tap one to see how close it stands.</p>
+          <div className="lv-called">
+            {called.map((b) => <CalledRow key={b.id} bet={b} m={memberOf.get(b.id)} me={myName} before={before(b)} />)}
+          </div>
+        </section>
+      )}
       {live.unmodeled.length > 0 && <p className="small muted">Not included, no vote source yet: {live.unmodeled.join(', ')}.</p>}
 
       <details className="lv-method">
@@ -156,7 +158,7 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
   for (let c = Math.ceil(lo / step) * step; c <= hi; c += step) ticks.push(c)
   return (
     <section className="lv-card">
-      <h2 className="lv-h2">The money</h2>
+      <h2 className="lv-h2">Scoreboard</h2>
       <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The darker the bar, the likelier that finish. The black tick is the projection, and the numbers show where 9 in 10 finishes land.</p>
       <table className="lv-money">
         <thead>
@@ -187,24 +189,6 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
 
 // ---------------------------------------------------------------- the bets
 
-type GroupProps = { title: string; bets: PublicBet[]; memberOf: Map<string, MemberBet>; isOpen: (b: PublicBet) => boolean; certainty: (b: PublicBet) => number; me: string | null }
-
-function BetGroup({ title, bets, memberOf, isOpen, certainty, me }: GroupProps) {
-  const open = bets.filter(isOpen).sort((a, b) => certainty(a) - certainty(b))
-  const done = bets.filter((b) => !isOpen(b))
-  return (
-    <section className="lv-group">
-      <h2 className="lv-group-title">{title}</h2>
-      {open.length > 0 && <div className="lv-open">{open.map((b) => <BetCard key={b.id} bet={b} m={memberOf.get(b.id)} me={me} />)}</div>}
-      {done.length > 0 && (
-        <div className="lv-done-list">
-          {done.map((b) => <CalledCard key={b.id} bet={b} m={memberOf.get(b.id)} me={me} />)}
-        </div>
-      )}
-    </section>
-  )
-}
-
 const shortTitle = (b: PublicBet) => (b.kind === 'senate_seats' ? 'Senate seats' : b.kind === 'house_seats' ? 'House seats' : b.title.replace(' Senate (special)', '').replace(' Senate', '').replace(' House', ''))
 
 function rangeLine(b: PublicBet) {
@@ -212,96 +196,63 @@ function rangeLine(b: PublicBet) {
   return `9 in 10: ${Math.round(b.seatsLo as number)}–${Math.round(b.seatsHi as number)} Republican seats.`
 }
 
-/** A decided bet: the final as a line, the three closest guesses against it. The gap is the miss. */
-function CalledCard({ bet, m, me }: { bet: PublicBet; m?: MemberBet; me: string | null }) {
-  const race = bet.share != null
-  const final = race ? bet.share!.p50 : (bet.seatsMid as number)
-  const top = m ? closestGuesses(bet, m) : []
-  const shape = bet.density
-  const edges = [final, shape?.lo ?? final, shape?.hi ?? final, ...top.map((g) => g.x)]
-  const span = Math.max(...edges) - Math.min(...edges) || 1
-  const lo = Math.min(...edges) - span * 0.06
-  const hi = Math.max(...edges) + span * 0.06
-  const at = (v: number) => (race ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo)) * 100
-  const left = Math.min(at(shape?.lo ?? final), at(shape?.hi ?? final))
-  const right = Math.max(at(shape?.lo ?? final), at(shape?.hi ?? final))
-  const color = (id: string | null) => (race ? partyColor(bet.candidates.find((c) => c.id === id)?.party) : '#16181d')
+function LeanChip({ label, who }: { label: string; who?: string }) {
+  return <span className={`lv-chip lv-chip-${label.toLowerCase().replace(' ', '-')}`}>{label}{who ? ` ${who}` : ''}</span>
+}
+const Title = ({ bet }: { bet: PublicBet }) => (
+  <>{shortTitle(bet)}<small>{bet.side ? 'side bet, ' : ''}${Math.round(bet.pot_cents / 100)}</small></>
+)
+const winnerText = (m: MemberBet) => (m.refundLeads ? 'Money back' : `${namesText(m.rows[0]?.names ?? [])}${(m.rows[0]?.names.length ?? 0) > 1 ? ' split' : ''}`)
+
+type BetProps = { bet: PublicBet; m?: MemberBet; me: string | null; before: number | null }
+
+function BetCard(props: BetProps) {
+  const { bet, m } = props
   return (
-    <article className="lv-done">
+    <article className="lv-card lv-bet">
       <header className="lv-bet-head">
-        <h3>{shortTitle(bet)} <span className="lv-done-final">{middle(bet)}</span></h3>
-        {m && <LeanChip label={m.lean} who={m.refundLeads ? 'money back' : undefined} />}
+        <h3><Title bet={bet} /></h3>
+        {m?.rows[0] && <LeanChip label={m.lean} who={m.refundLeads ? 'money back' : namesText(m.rows[0].names)} />}
       </header>
-      {top.length > 0 && (
-        <table className="lv-miss">
-          <thead className="lv-vh"><tr><th scope="col">Guess</th><th scope="col">Against the final</th><th scope="col">Off by</th></tr></thead>
-          <tbody>
-            {top.map((g, i) => (
-              <tr key={g.x + (g.side ?? '')} className={g.names.includes(me ?? '') ? 'me' : undefined}>
-                <th scope="row" className={i === 0 && !m?.refundLeads ? 'lead' : undefined}>{namesText(g.names)}</th>
-                <td>
-                  <div className="lv-miss-track" role="img" aria-label={`Guessed ${race ? marginText(bet, g.x) : g.x}`}>
-                    {shape && shape.d.length > 1 && <i className="lv-miss-band" style={{ left: `${left}%`, width: `${right - left}%`, background: race ? fadeCss({ ...shape, d: [...shape.d].reverse() }) : fadeCss(shape) }} />}
-                    <i className="lv-miss-gap" style={{ left: `${Math.min(at(g.x), at(final))}%`, width: `${Math.abs(at(g.x) - at(final))}%`, background: color(g.side) }} />
-                    <i className="lv-miss-final" style={{ left: `${at(final)}%` }} />
-                    <i className="lv-miss-dot" style={{ left: `${at(g.x)}%`, background: color(g.side) }} />
-                  </div>
-                </td>
-                <td className="num"><small>{race ? (g.x * 2 - 100 === 0 ? 'Tied' : marginText(bet, g.x)) : g.x}</small><b>{g.right ? `off ${(race ? g.miss * 2 : g.miss).toFixed(race ? 1 : 0)}` : 'wrong side'}</b></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <details className="lv-done-more">
-        <summary>What’s left to count</summary>
-        <p className="small muted">{rangeLine(bet)} {bet.note} {bet.done}</p>
-      </details>
+      <BetBody {...props} />
     </article>
   )
 }
 
-function LeanChip({ label, who }: { label: string; who?: string }) {
-  return <span className={`lv-chip lv-chip-${label.toLowerCase().replace(' ', '-')}`}>{label}{who ? ` ${who}` : ''}</span>
+/** Called: just who won. Open it and it's the same picture as an undecided bet, with far less shading left. */
+function CalledRow(props: BetProps) {
+  const { bet, m, me } = props
+  return (
+    <details className="lv-called-row">
+      <summary>
+        <span className="lv-called-race"><b>{shortTitle(bet)}</b><small>{bet.side ? 'side bet · ' : ''}{middle(bet)}</small></span>
+        {m ? <span className={`lv-called-who${m.rows[0]?.names.includes(me ?? '') ? ' me' : ''}`}>{winnerText(m)}</span> : <span />}
+        {m && <LeanChip label={m.lean} />}
+      </summary>
+      <div className="lv-called-more"><BetBody {...props} /></div>
+    </details>
+  )
 }
 
-function BetCard({ bet, m, me, before = null, hero = false }: { bet: PublicBet; m?: MemberBet; me: string | null; before?: number | null; hero?: boolean }) {
-  const shown = (m?.rows ?? []).filter((r) => r.p >= 0.005)
+function BetBody({ bet, m, me, before }: BetProps) {
   const nobody = bet.share && m ? bet.candidates.find((c) => !m.ticks.some((t) => t.side === c.id)) : null
   const seatRows = bet.hist?.filter((h) => h.p >= 0.005) ?? []
   const moved = before != null && bet.share && Math.abs(before - bet.share.p50) >= 0.1
   return (
-    <article className={`lv-card lv-bet${hero ? ' lv-hero' : ''}`}>
-      <header className="lv-bet-head">
-        <h3>{shortTitle(bet)}{bet.pot_cents ? <small>${Math.round(bet.pot_cents / 100)}</small> : null}</h3>
-        {m?.rows[0] && <LeanChip label={m.lean} who={m.refundLeads ? 'money back' : namesText(m.rows[0].names)} />}
-      </header>
-      {hero && bet.share ? (
-        <>
-          <Dial bet={bet} m={m} before={before} />
-          <p className="lv-needle-big">{marginText(bet, bet.share.p50)}</p>
-          {moved && <p className="small muted lv-center">Was {marginText(bet, before as number)} at the last update (thin line).</p>}
-          <p className="small lv-center">{rangeLine(bet)}</p>
-        </>
-      ) : (
-        <>
-          {bet.share ? (
-            <p className="small lv-bet-line"><b>{marginText(bet, bet.share.p50)}</b>. {rangeLine(bet)}</p>
-          ) : (
-            <p className="small lv-bet-line">
-              Republicans: {seatRows.length <= 4 ? seatRows.map((h, i) => <span key={h.r}>{i ? ' · ' : ''}<b>{h.r}</b> {chance(h.p)}</span>) : <b>{Math.round(bet.seatsLo as number)}–{Math.round(bet.seatsHi as number)}</b>}.
-              {bet.open && bet.open.length > 0 && <span className="muted"> Depends on {bet.open.map((o) => o.title).join(' and ')}.</span>}
-            </p>
-          )}
-          <Strip bet={bet} m={m} />
-        </>
-      )}
+    <>
+      <Dial bet={bet} m={m} before={before} />
+      <p className="lv-needle-big">{middle(bet)}</p>
+      {moved && <p className="small muted lv-center">Was {marginText(bet, before as number)} at the last update (thin line).</p>}
+      <p className="small lv-center lv-range-line">
+        {bet.share || seatRows.length > 4 ? rangeLine(bet) : seatRows.map((h, i) => <span key={h.r}>{i ? ' · ' : ''}<b>{h.r}</b> {chance(h.p)}</span>)}
+        {bet.open && bet.open.length > 0 && <span className="muted"> Depends on {bet.open.map((o) => o.title).join(' and ')}.</span>}
+      </p>
       {m && (
         <ol className="lv-board">
-          {shown.map((r, i) => (
+          {m.rows.map((r, i) => (
             <li key={r.names.join()} className={r.names.includes(me ?? '') ? 'me' : undefined}>
               <span className="lv-rank">{i + 1}</span>
-              <span className="lv-who">{namesText(r.names)}{r.names.length > 1 && <small> split</small>}<small className="lv-guess">{guessText(bet, r.guess)}</small></span>
+              <span className="lv-who">{namesText(r.names)}{r.names.length > 1 && <small> split</small>}<small className="lv-guess">{guessText(bet, r)}</small></span>
               <span className="lv-pbar" aria-hidden="true"><i style={{ width: `${Math.max(r.p * 100, 1)}%` }} /></span>
               <b className="lv-p">{chance(r.p)}</b>
             </li>
@@ -312,17 +263,21 @@ function BetCard({ bet, m, me, before = null, hero = false }: { bet: PublicBet; 
         </ol>
       )}
       {bet.note && <p className="small muted lv-bet-note">{bet.note} {bet.done}</p>}
-    </article>
+    </>
   )
 }
 
-const guessText = (bet: PublicBet, guess: number) => (bet.share == null ? `guessed ${guess}` : `guessed ${marginText(bet, guess)}`)
+function guessText(bet: PublicBet, r: { guess: number; side: string | null }) {
+  if (!bet.share) return `guessed ${r.guess}, off by ${Math.abs(r.guess - (bet.seatsMid as number)).toFixed(0)}`
+  const rightSide = r.side === bet.candidates[bet.share.p50 > 50 ? 0 : 1].id
+  return `guessed ${marginText(bet, r.guess)}, ${rightSide ? `off by ${(Math.abs(r.guess - bet.share.p50) * 2).toFixed(1)}` : 'wrong side'}`
+}
 
-// ---------------------------------------------------------------- the shared picture: a range, sliced by who it pays
+// ---------------------------------------------------------------- the curved bar: a range, sliced by who it pays
 
-type Scene = { lo: number; hi: number; flip: boolean; mid: number; shape?: Density; zs: Zone[]; xs: { x: number; side: string | null; rank: number | null }[]; pos: (v: number) => number; sideOf: (id: string | null) => string | undefined; race: boolean }
+type Scene = { lo: number; hi: number; mid: number; shape?: Density; zs: Zone[]; xs: { x: number; side: string | null; rank: number | null }[]; pos: (v: number) => number; sideOf: (id: string | null) => string | undefined; race: boolean }
 
-/** The domain, in side A's share for races (A's side on the left, like the rest of the site) or Republican seats (Republicans right). pos() is 0 to 1, left to right. */
+/** The scale, in side A's share for races (A's side on the left, like the rest of the site) or Republican seats (Republicans right). pos() is 0 to 1, left to right. It always spans the guesses, so as a count firms up the shading visibly shrinks against them. */
 function scene(bet: PublicBet, m?: MemberBet): Scene {
   const race = bet.share != null
   const xs = [...new Map((m?.ticks ?? []).map((t) => [tickKey(t), t])).values()]
@@ -336,61 +291,12 @@ function scene(bet: PublicBet, m?: MemberBet): Scene {
   const zs = xs.length ? zones(xs, race ? { lo, hi, a: bet.candidates[0].id, b: bet.candidates[1].id } : { lo, hi }) : []
   return {
     lo, hi, shape, zs, xs, pos, race,
-    flip: race && lo < 50 && hi > 50,
     mid: race ? bet.share!.p50 : (bet.seatsMid as number),
     sideOf: (id) => bet.candidates.find((c) => c.id === id)?.party,
   }
 }
-const edgeLabel = (bet: PublicBet, s: Scene, v: number) => (s.race ? marginText(bet, v) : String(Math.round(v)))
+const edgeLabel = (bet: PublicBet, s: Scene, v: number) => (s.race ? marginText(bet, v) : `${Math.round(v)} seats`)
 
-function Strip({ bet, m }: { bet: PublicBet; m?: MemberBet }) {
-  const s = scene(bet, m)
-  const L = 12
-  const R = 308
-  const X = (v: number) => L + s.pos(v) * (R - L)
-  const AXIS = 46
-  const lanes = [-1e9, -1e9]
-  const ranked = s.xs.filter((t) => t.rank != null).sort((a, b) => X(a.x) - X(b.x)).map((t) => {
-    const x = X(t.x)
-    const lane = x - lanes[0] >= 18 ? 0 : 1
-    lanes[lane] = x
-    return { t, x, y: lane === 0 ? 26 : 9 }
-  })
-  const color = (id: string | null) => (s.race ? partyColor(s.sideOf(id)) : '#16181d')
-  const refund = s.zs.find((z) => z.owner === null)
-  const refundW = refund ? Math.abs(X(refund.to) - X(refund.from)) : 0
-  return (
-    <svg className="lv-strip" viewBox="0 0 320 72" role="img" aria-label={`${bet.title}: the middle estimate is ${middle(bet)}. ${rangeLine(bet)}`}>
-      {refund && <rect x={Math.min(X(refund.from), X(refund.to))} width={refundW} y={AXIS - 7} height="14" className="lv-zone-refund" />}
-      <line x1={L} x2={R} y1={AXIS} y2={AXIS} className="lv-strip-axis" />
-      {s.shape && s.shape.d.length > 1 ? (
-        <>
-          <defs>
-            <linearGradient id={`fade-${bet.id}`} gradientUnits="userSpaceOnUse" x1={X(s.shape.lo)} x2={X(s.shape.hi)} y1="0" y2="0">
-              {fade(s.shape).map((f) => <stop key={f.at} offset={f.at} stopColor={`rgb(${INK})`} stopOpacity={f.a} />)}
-            </linearGradient>
-          </defs>
-          <rect x={Math.min(X(s.shape.lo), X(s.shape.hi))} width={Math.abs(X(s.shape.hi) - X(s.shape.lo))} y={AXIS - 7} height="14" fill={`url(#fade-${bet.id})`} />
-        </>
-      ) : <rect x={X(s.mid) - 2} width="4" y={AXIS - 7} height="14" fill={`rgb(${INK})`} />}
-      {s.zs.slice(1).map((z, i) => <line key={i} x1={X(z.from)} x2={X(z.from)} y1={AXIS - 10} y2={AXIS + 10} className={Math.abs(z.from - 50) < 0.02 && s.race ? 'lv-tied' : 'lv-divide'} />)}
-      <line x1={X(s.mid)} x2={X(s.mid)} y1={AXIS - 9} y2={AXIS + 9} className="lv-strip-mid" />
-      {s.xs.filter((t) => t.rank == null).map((t, i) => <circle key={i} cx={X(t.x)} cy={AXIS} r="3" fill={color(t.side)} stroke="var(--paper)" strokeWidth="1" />)}
-      {ranked.map(({ t, x, y }) => (
-        <g key={tickKey(t)}>
-          <line x1={x} x2={x} y1={y} y2={AXIS} stroke={color(t.side)} strokeWidth="1.25" />
-          <circle cx={x} cy={y} r="8" fill={color(t.side)} stroke="var(--paper)" strokeWidth="1.5" />
-          <text x={x} y={y + 3.5} textAnchor="middle" className="lv-strip-num">{t.rank}</text>
-        </g>
-      ))}
-      <text x={L} y="68" className="lv-strip-end">{edgeLabel(bet, s, s.race ? s.hi : s.lo)}</text>
-      {refund && refundW > 58 && <text x={(X(refund.from) + X(refund.to)) / 2} y="68" textAnchor="middle" className="lv-strip-end">money back</text>}
-      <text x={R} y="68" textAnchor="end" className="lv-strip-end">{edgeLabel(bet, s, s.race ? s.lo : s.hi)}</text>
-    </svg>
-  )
-}
-
-/** The headline race as a needle: same scale and same slices as a strip, bent into a dial. The needle is the projected margin, not anyone's chance of winning. */
 const CX = 160
 const CY = 172
 const polar = (t: number, r: number) => { const a = Math.PI * (1 - t); return [CX + r * Math.cos(a), CY - r * Math.sin(a)] }
@@ -401,6 +307,22 @@ function arc(t0: number, t1: number, r0: number, r1: number) {
   const [x3, y3] = polar(t0, r0)
   return `M${x0} ${y0}A${r1} ${r1} 0 0 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 0 0 ${x3} ${y3}Z`
 }
+/** The shading, one wedge per slice of the simulated range, so even a very tight range stays visible. */
+function wedges(s: Scene) {
+  const x = s.shape
+  if (!x) return []
+  const a = s.pos(x.lo)
+  const b = s.pos(x.hi)
+  const center = (a + b) / 2
+  const half = Math.max(Math.abs(b - a) / 2, 0.006)
+  const from = center - half * Math.sign(b - a || 1)
+  const to = center + half * Math.sign(b - a || 1)
+  return x.d.map((v, i) => {
+    const t0 = from + (i / x.d.length) * (to - from)
+    const t1 = from + ((i + 1) / x.d.length) * (to - from)
+    return { t0: Math.min(t0, t1), t1: Math.max(t0, t1), a: x.d.length < 2 ? 0.85 : alpha(v) }
+  }).filter((w) => w.a > 0.005)
+}
 
 function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: number | null }) {
   const s = scene(bet, m)
@@ -409,44 +331,40 @@ function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: numbe
   useEffect(() => { const id = requestAnimationFrame(() => setShown(t)); return () => cancelAnimationFrame(id) }, [t])
   const R0 = 92
   const R1 = 126
-  const steps = 90
-  const valueAt = (p: number) => (s.hi - p * (s.hi - s.lo))
+  const color = (id: string | null) => (s.race ? partyColor(s.sideOf(id)) : '#16181d')
   const lanes = [-1e9, -1e9]
   const ranked = s.xs.filter((x) => x.rank != null).map((x) => ({ x, p: s.pos(x.x) })).sort((a, b) => a.p - b.p).map(({ x, p }) => {
     const lane = (p - lanes[0]) * Math.PI * 140 >= 18 ? 0 : 1
     lanes[lane] = p
     return { x, p, r: lane === 0 ? 139 : 155 }
   })
-  const ghost = before != null && Math.abs(before - s.mid) >= 0.1 && before > s.lo && before < s.hi
+  const ghost = before != null && s.race && Math.abs(before - s.mid) >= 0.1 && before > s.lo && before < s.hi
   return (
-    <svg className="lv-dial" viewBox="0 0 320 196" role="img" aria-label={`${bet.title}: the middle estimate is ${marginText(bet, s.mid)}. ${rangeLine(bet)}`}>
+    <svg className="lv-dial" viewBox="0 0 320 196" role="img" aria-label={`${bet.title}: the middle estimate is ${middle(bet)}. ${rangeLine(bet)}`}>
       <path d={arc(0, 1, R0, R1)} fill="#f2eee3" />
       {s.zs.filter((z) => z.owner === null).map((z, i) => {
         const a = Math.min(s.pos(z.from), s.pos(z.to))
         const b = Math.max(s.pos(z.from), s.pos(z.to))
         return <path key={i} d={arc(a, b, R0, R1)} className="lv-zone-refund" />
       })}
-      {s.shape && Array.from({ length: steps }, (_, i) => {
-        const a = alphaAt(s.shape as Density, valueAt((i + 0.5) / steps))
-        return a > 0.005 ? <path key={i} d={arc(i / steps, (i + 1) / steps, R0, R1)} fill={`rgba(${INK}, ${a})`} /> : null
-      })}
+      {wedges(s).map((w) => <path key={w.t0} d={arc(w.t0, w.t1, R0, R1)} fill={`rgb(${INK})`} fillOpacity={w.a} />)}
       {s.zs.slice(1).map((z, i) => {
         const p = s.pos(z.from)
         const [x0, y0] = polar(p, R0 - 3)
         const [x1, y1] = polar(p, R1 + 3)
-        return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} className={Math.abs(z.from - 50) < 0.02 ? 'lv-tied' : 'lv-divide'} />
+        return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} className={s.race && Math.abs(z.from - 50) < 0.02 ? 'lv-tied' : 'lv-divide'} />
       })}
       {s.xs.filter((x) => x.rank == null).map((x, i) => {
         const [px, py] = polar(s.pos(x.x), R1 + 6)
-        return <circle key={i} cx={px} cy={py} r="3" fill={partyColor(s.sideOf(x.side))} stroke="var(--paper)" strokeWidth="1" />
+        return <circle key={i} cx={px} cy={py} r="3" fill={color(x.side)} stroke="var(--paper)" strokeWidth="1" />
       })}
       {ranked.map(({ x, p, r }) => {
         const [x0, y0] = polar(p, R1)
         const [x1, y1] = polar(p, r)
         return (
           <g key={tickKey(x)}>
-            <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={partyColor(s.sideOf(x.side))} strokeWidth="1.25" />
-            <circle cx={x1} cy={y1} r="8" fill={partyColor(s.sideOf(x.side))} stroke="var(--paper)" strokeWidth="1.5" />
+            <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={color(x.side)} strokeWidth="1.25" />
+            <circle cx={x1} cy={y1} r="8" fill={color(x.side)} stroke="var(--paper)" strokeWidth="1.5" />
             <text x={x1} y={y1 + 3.5} textAnchor="middle" className="lv-strip-num">{x.rank}</text>
           </g>
         )
@@ -456,8 +374,8 @@ function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: numbe
         <line x1={CX} y1={CY} x2={CX} y2={CY - (R0 - 2)} className="lv-pointer-line" />
       </g>
       <circle cx={CX} cy={CY} r="7" fill="var(--ink)" />
-      <text x="24" y="192" className="lv-dial-end">{edgeLabel(bet, s, s.hi)}</text>
-      <text x="296" y="192" textAnchor="end" className="lv-dial-end">{edgeLabel(bet, s, s.lo)}</text>
+      <text x="24" y="192" className="lv-dial-end">{edgeLabel(bet, s, s.race ? s.hi : s.lo)}</text>
+      <text x="296" y="192" textAnchor="end" className="lv-dial-end">{edgeLabel(bet, s, s.race ? s.lo : s.hi)}</text>
     </svg>
   )
 }

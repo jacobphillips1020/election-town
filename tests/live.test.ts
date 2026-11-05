@@ -6,10 +6,10 @@ import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
 import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
-import { density, drawRace, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket, type MemberBet, type PublicBet } from '../src/live/model'
+import { density, drawRace, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
 import { shortName } from '../src/live/names'
 import { closestShares, payouts, type ScoreEntry } from '../src/live/scoring'
-import { closestGuesses, zones } from '../src/live/zones'
+import { zones } from '../src/live/zones'
 
 const fixed = counts as unknown as { counts: Record<string, Count>; mississippi: Count; senateSeats: SeatCount[]; houseSeats: SeatCount[] }
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -143,6 +143,17 @@ describe('project', () => {
     expect(payouts(entries, { winner: 'c1', share: 531 }).map((p) => p.gross)).toEqual([600, 400, 0])
   })
 
+  test('a decided bet still lists three guesses: right side first, then closest to the middle estimate', () => {
+    // Georgia: a lopsided count, so one guess takes the whole bet and the rest tie at nothing.
+    const inp = inputs()
+    const e = (user: string, c1: number, winner = 'c1') => ({ id: uuid(5000 + c1), user, name: user, market: 'm1', cents: 400, winner, shares: { c1, c2: 1000 - c1 }, r: null })
+    inp.entries = inp.entries.filter((x) => x.market !== 'm1').concat([e('Far', 505), e('Close', 570), e('Next', 560), e('Mid', 540), e('Off', 480, 'c2')])
+    const m = project(inp, 1000).members.bets.find((b) => b.id === 'm1')!
+    expect(m.rows.map((r) => r.names[0])).toEqual(['Close', 'Next', 'Mid'])
+    expect(m.rows[0].p).toBeGreaterThan(0.99)
+    expect(m.ticks.filter((x) => x.rank != null).map((x) => x.name).sort()).toEqual(['Close', 'Mid', 'Next'])
+  })
+
   test('every error bar holds its estimate, and nobody can lose more than they paid', () => {
     for (const b of run.members.bettors) {
       expect(b.lo).toBeLessThanOrEqual(b.net + 1)
@@ -233,21 +244,6 @@ describe('zones: who owns each stretch of the range', () => {
       const paid = entries.filter((_, i) => pay[i].gross > 0).map((e) => `${(e.shares as Record<string, number>).c1 / 10}|${e.winner}`)
       expect(paid).toEqual([zone.owner])
     }
-  })
-})
-
-describe('closest guesses on decided bets', () => {
-  const bet = { share: { p5: 53, p10: 53, p50: 54, p90: 55, p95: 55 }, candidates: [{ id: 'c1', name: 'A', party: 'D' }, { id: 'c2', name: 'B', party: 'R' }] } as unknown as PublicBet
-  const t = (name: string, x: number, side: string) => ({ name, x, side, rank: null })
-  test('right side first, closest first, same guesses grouped, at most three', () => {
-    const m = { ticks: [t('Far', 50.5, 'c1'), t('Pat', 53, 'c1'), t('Sam', 53, 'c1'), t('Wrong', 49.9, 'c2'), t('Near', 55, 'c1'), t('Mid', 52, 'c1')] } as unknown as MemberBet
-    const top = closestGuesses(bet, m)
-    expect(top.map((g) => g.names)).toEqual([['Pat', 'Sam'], ['Near'], ['Mid']])
-    expect(top[0].miss).toBeCloseTo(1)
-  })
-  test('with too few right-side guesses, the wrong side fills in and is marked', () => {
-    const m = { ticks: [t('Right', 53, 'c1'), t('Wrong', 49, 'c2')] } as unknown as MemberBet
-    expect(closestGuesses(bet, m).map((g) => g.right)).toEqual([true, false])
   })
 })
 

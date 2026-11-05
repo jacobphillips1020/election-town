@@ -408,9 +408,14 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       row.p += g[i] / draws
       groups.set(key, row)
     })
-    const rows = [...groups.values()].sort((x, y) => y.p - x.p || x.guess - y.guess)
+    // Most likely first. Where chances tie (usually at nothing, once a bet is decided), closest to the middle estimate first,
+    // guesses on the right side of the race ahead of the rest: the same order the payout uses.
+    const final = seat ? quantile(Int16Array.from(m.kind === 'senate_seats' ? senateTotals : houseTotals).sort(), 0.5) : 100 * quantile(Float32Array.from(finals.get(m.id)!).sort(), 0.5)
+    const rightSide = seat ? null : m.candidates[final > 50 ? 0 : 1].id
+    const wrong = (row: BoardRow) => (seat || row.side === rightSide ? 0 : 1)
+    const rows = [...groups.values()].sort((x, y) => y.p - x.p || wrong(x) - wrong(y) || Math.abs(x.guess - final) - Math.abs(y.guess - final))
     const top = rows.slice(0, 3)
-    const rank = new Map(top.filter((row) => row.p >= 0.005).map((row, i) => [row, i + 1]))
+    const rank = new Map(top.map((row, i) => [row, i + 1]))
     const refund = nobody.get(m.id)! / draws
     const ticks = rows.flatMap((row) => row.names.map((name) => ({ name, x: row.guess, side: row.side, rank: rank.get(row) ?? null })))
     const refundLeads = refund > (top[0]?.p ?? 0)

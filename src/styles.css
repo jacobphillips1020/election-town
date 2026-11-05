@@ -467,7 +467,7 @@ table.grid .seat-row td { color: var(--ink); background: #f1ece0; }
 .lv-stale { color: var(--warn); }
 .lv-card { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 14px; margin-top: 14px; }
 .lv-sub { margin: 0 0 8px; }
-.lv-key { margin: 16px 0 0; }
+.lv-key { margin: 8px 0 0; }
 .lv-center { text-align: center; margin-bottom: 6px; }
 
 .lv-dial { display: block; width: 100%; max-width: 440px; margin: 2px auto 0; }
@@ -503,11 +503,14 @@ thead.lv-vh { position: absolute; }
 
 .lv-group { margin-top: 22px; }
 .lv-group-title { font-family: Georgia, "Times New Roman", serif; font-size: 1.3rem; margin: 0; padding-bottom: 4px; border-bottom: 2px solid #142a5c; }
-.lv-open { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 12px; margin-top: 12px; }
+.page.lv { max-width: 62rem; }
+.lv-open { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 12px; align-items: start; }
+.lv-called-section { border-top: 3px double #142a5c; margin-top: 30px; padding-top: 18px; }
+.lv-called-section .lv-group-title { border-bottom: 0; padding-bottom: 0; }
 .lv-open .lv-card { margin: 0; }
 .lv-bet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; }
 .lv-bet-head h3 { margin: 0; font: 700 1.05rem/1.2 Georgia, "Times New Roman", serif; }
-.lv-bet-head h3 small { margin-left: 6px; font: 400 .78rem system-ui, sans-serif; color: var(--muted); }
+.lv-bet-head h3 small { margin-left: 6px; white-space: nowrap; font: 400 .78rem system-ui, sans-serif; color: var(--muted); }
 .lv-bet-line { margin: 6px 0 4px; }
 .lv-bet-note { margin: 8px 0 0; font-size: .8rem; }
 
@@ -518,11 +521,7 @@ thead.lv-vh { position: absolute; }
 .lv-chip-very-likely { background: #3f5a94; color: #fff; }
 .lv-chip-called { background: #142a5c; color: #fff; }
 
-.lv-strip { display: block; width: 100%; margin: 4px 0 2px; }
-.lv-strip-axis { stroke: var(--line); stroke-width: 1.5; }
-.lv-strip-mid { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; paint-order: stroke; }
 .lv-strip-num { font: 700 10px system-ui, sans-serif; fill: #fff; }
-.lv-strip-end { font: 400 9.5px system-ui, sans-serif; fill: var(--muted); }
 
 .lv-board { list-style: none; margin: 6px 0 0; padding: 0; }
 .lv-board li { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr) 4rem 2.6rem; gap: 6px; align-items: center; padding: 5px 2px; border-top: 1px solid var(--line); }
@@ -537,27 +536,20 @@ thead.lv-vh { position: absolute; }
 .lv-refund .lv-who { font-weight: 400; }
 .lv-p { text-align: right; font-size: .95rem; }
 
-.lv-done-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 0 18px; margin-top: 4px; }
-.lv-done { padding: 10px 0 4px; border-bottom: 1px solid var(--line); }
-.lv-done-final { font: 400 .85rem system-ui, sans-serif; color: var(--muted); margin-left: 4px; }
-.lv-miss { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 4px; }
-.lv-miss th, .lv-miss td { padding: 3px 0; font-weight: 400; vertical-align: middle; text-align: left; }
-.lv-miss tbody th { width: 5.6rem; font-size: .85rem; line-height: 1.15; padding-right: 6px; }
-.lv-miss tbody th.lead { font-weight: 700; }
-.lv-miss tr.me th, .lv-miss tr.me td { background: #fff7dc; }
-.lv-miss .num { width: 5rem; text-align: right; line-height: 1.1; }
-.lv-miss .num b { display: block; font-size: .8rem; font-weight: 650; white-space: nowrap; }
-.lv-miss .num small { display: block; font-size: .66rem; color: var(--muted); white-space: nowrap; }
-.lv-miss-track { position: relative; height: 22px; margin: 0 6px; }
-.lv-miss-track i { position: absolute; display: block; }
-.lv-miss-band { top: 0; bottom: 0; }
-.lv-miss-gap { top: 10px; height: 2px; opacity: .35; }
-.lv-miss-final { top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ink); }
-.lv-miss-dot { top: 6px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; border: 1.5px solid var(--paper); box-sizing: border-box; }
-.lv-done-more { font-size: .78rem; color: var(--muted); }
-.lv-done-more summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
-.lv-done-more p { margin: 0 0 8px; }
-.lv-hero { margin-top: 14px; }
+.lv-called { margin-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 28px; align-items: start; }
+@media (min-width: 760px) {
+  .lv-open, .lv-called { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lv-called-row { border-bottom: 1px solid var(--line); }
+.lv-called-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 2px; cursor: pointer; list-style: none; min-height: 48px; }
+.lv-called-row > summary::-webkit-details-marker { display: none; }
+.lv-called-race b { display: block; line-height: 1.2; font-size: .95rem; }
+.lv-called-race small { color: var(--muted); font-size: .76rem; }
+.lv-called-who { font-size: .9rem; line-height: 1.2; font-weight: 650; }
+.lv-called-who.me { background: #fff7dc; }
+.lv-called-more { padding: 0 2px 12px; }
+.lv-range-line { margin-bottom: 8px; }
+
 
 .lv-method { margin-top: 22px; font-size: .9rem; }
 .lv-method summary { cursor: pointer; font-weight: 650; min-height: 44px; display: flex; align-items: center; }

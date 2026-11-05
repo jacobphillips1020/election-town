@@ -1,7 +1,5 @@
 // Which guess would win the bet if the final number landed at each point. This is the payout rule drawn as a line:
 // right side first, then closest guess. tests/live.test.ts checks it against the real payout.
-import type { MemberBet, PublicBet } from './model.js'
-
 export type Tick = { x: number; side: string | null }
 export type Zone = { from: number; to: number; owner: string | null }
 
@@ -28,18 +26,3 @@ export function zones(ticks: Tick[], range: { lo: number; hi: number; a?: string
   }
   return out
 }
-
-/** The three guesses closest to the projected final, right side of the race first: the same order the payout uses. */
-export function closestGuesses(bet: PublicBet, m: MemberBet) {
-  const final = bet.share ? bet.share.p50 : (bet.seatsMid as number)
-  const winner = bet.share ? bet.candidates[final > 50 ? 0 : 1].id : null
-  const groups = new Map<string, { x: number; side: string | null; names: string[] }>()
-  for (const t of m.ticks) {
-    const g = groups.get(tickKey(t)) ?? { x: t.x, side: t.side, names: [] }
-    g.names.push(t.name)
-    groups.set(tickKey(t), g)
-  }
-  return [...groups.values()].map((g) => ({ ...g, right: winner == null || g.side === winner, miss: Math.abs(g.x - final) }))
-    .sort((a, b) => Number(b.right) - Number(a.right) || a.miss - b.miss).slice(0, 3)
-}
-
