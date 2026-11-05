@@ -145,7 +145,7 @@ type AwardKind = 'cup' | 'money' | 'last'
 const AWARDS: Record<AwardKind, { title: string; reason: string; keep: string; photo?: { src: string; alt: string; line: string } }> = {
   money: { title: 'Money Winner', reason: 'Most money won', keep: 'to keep it' },
   cup: { title: 'The Nate Silver Cup', reason: 'Lowest average error', keep: 'to keep it', photo: { src: '/nate-silver-cup.png', alt: 'Nate Silver', line: 'GOAT' } },
-  last: { title: 'The G. Elliott Morris Participation Trophy', reason: 'Highest average error', keep: 'stuck with it', photo: { src: '/participation-trophy.jpg', alt: 'G. Elliott Morris', line: 'Better luck next time, lil bitch' } },
+  last: { title: 'The G. Elliott Morris Participation Trophy', reason: 'Highest average error', keep: 'stuck with it', photo: { src: '/participation-trophy.jpg', alt: 'G. Elliott Morris', line: 'Better luck next time!' } },
 }
 
 /** The awards. Hover, tap or tab to one. */
