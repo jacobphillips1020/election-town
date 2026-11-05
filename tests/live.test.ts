@@ -188,10 +188,13 @@ describe('project', () => {
     expect([2, 3.49, 3.5, 4.49, 4.5, 5.49, 5.5, 9].map(tierOf)).toEqual(['Elite', 'Elite', 'Great', 'Great', 'Good', 'Good', 'Mid', 'Mid'])
   })
 
-  test('the chances for both awards each add up to 100%', () => {
+  test('the chances for each award add up to 100%', () => {
     const { bettors } = project(inputs(), 2000).members
     expect(bettors.reduce((a, b) => a + (b.cupChance ?? 0), 0)).toBeCloseTo(1, 6)
     expect(bettors.reduce((a, b) => a + b.moneyChance, 0)).toBeCloseTo(1, 6)
+    expect(bettors.reduce((a, b) => a + (b.lastChance ?? 0), 0)).toBeCloseTo(1, 6)
+    const highest = bettors.reduce((a, b) => ((a.avgError as number) >= (b.avgError as number) ? a : b))
+    expect(highest.lastChance).toBeGreaterThan(0)
     const lowest = bettors.reduce((a, b) => ((a.avgError as number) <= (b.avgError as number) ? a : b))
     expect(lowest.cupChance).toBeGreaterThan(0)
   })

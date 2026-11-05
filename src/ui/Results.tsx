@@ -141,8 +141,15 @@ function Results({ data }: { data: Payload }) {
 
 const TROPHY = 'M7 3h10v2h4v2.5c0 2.8-2.1 5-4.8 5.4A5.1 5.1 0 0 1 13 15.8V18h3a1 1 0 0 1 1 1v2H7v-2a1 1 0 0 1 1-1h3v-2.200a5.100 5.100 0 0 1-3.200-2.900C5.100 12.500 3 10.300 3 7.500V5h4V3Zm0 4H5v.5c0 1.500.8 2.800 2 3.400V7Zm10 0v3.900c1.200-.6 2-1.900 2-3.400V7h-2Z'
 
-/** The two awards. Hover, tap or tab to one. The cup comes with the man himself. */
-function Award({ kind, chance: keep }: { kind: 'cup' | 'money'; chance: number | null | undefined }) {
+type AwardKind = 'cup' | 'money' | 'last'
+const AWARDS: Record<AwardKind, { title: string; reason: string; keep: string; photo?: { src: string; alt: string; line: string } }> = {
+  money: { title: 'Money Winner', reason: 'Most money won', keep: 'to keep it' },
+  cup: { title: 'The Nate Silver Cup', reason: 'Lowest average error', keep: 'to keep it', photo: { src: '/nate-silver-cup.png', alt: 'Nate Silver', line: 'GOAT' } },
+  last: { title: 'The G. Elliott Morris Participation Trophy', reason: 'Highest average error', keep: 'stuck with it', photo: { src: '/participation-trophy.jpg', alt: 'G. Elliott Morris', line: 'Better luck next time, lil bitch' } },
+}
+
+/** The awards. Hover, tap or tab to one. */
+function Award({ kind, chance: keep }: { kind: AwardKind; chance: number | null | undefined }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!open) return
@@ -152,14 +159,12 @@ function Award({ kind, chance: keep }: { kind: 'cup' | 'money'; chance: number |
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', onKey) }
   }, [open])
-  const cup = kind === 'cup'
-  const title = cup ? 'The Nate Silver Cup' : 'Money Winner'
-  const reason = cup ? 'Lowest average error' : 'Most money won'
+  const a = AWARDS[kind]
   return (
     <span className="lv-cup" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" className="lv-cup-btn" aria-label={title} aria-expanded={open}
+      <button type="button" className={`lv-cup-btn lv-cup-btn-${kind}`} aria-label={a.title} aria-expanded={open}
         onClick={() => setOpen(true)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onPointerDown={(e) => e.stopPropagation()}>
-        {cup ? (
+        {kind !== 'money' ? (
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d={TROPHY} /></svg>
         ) : (
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="12" cy="12" r="10" /><text x="12" y="17" textAnchor="middle" className="lv-coin-mark">$</text></svg>
@@ -167,14 +172,14 @@ function Award({ kind, chance: keep }: { kind: 'cup' | 'money'; chance: number |
       </button>
       {open && (
         <span className="lv-cup-pop" role="status">
-          {cup && (
+          {a.photo && (
             <span className="lv-cup-photo">
-              <img src="/nate-silver-cup.png" alt="Nate Silver" />
-              <b className="lv-cup-goat">GOAT</b>
+              <img src={a.photo.src} alt={a.photo.alt} />
+              <b className={`lv-cup-goat${kind === 'last' ? ' lv-cup-burn' : ''}`}>{a.photo.line}</b>
             </span>
           )}
-          <b className="lv-cup-title">{title}</b>
-          <small>{reason}{keep != null ? `. ${chance(keep)} to keep it.` : '.'}</small>
+          <b className="lv-cup-title">{a.title}</b>
+          <small>{a.reason}{keep != null ? `. ${chance(keep)} ${a.keep}.` : '.'}</small>
         </span>
       )}
     </span>
@@ -183,7 +188,9 @@ function Award({ kind, chance: keep }: { kind: 'cup' | 'money'; chance: number |
 
 function Awards({ bettors }: { bettors: Bettor[] }) {
   const rich = bettors[0]
-  const sharp = [...bettors].filter((b) => b.avgError != null).sort((a, b) => (a.avgError as number) - (b.avgError as number))[0]
+  const ranked = [...bettors].filter((b) => b.avgError != null).sort((a, b) => (a.avgError as number) - (b.avgError as number))
+  const sharp = ranked[0]
+  const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null
   return (
     <div className="lv-awards">
       {rich && (
@@ -198,6 +205,12 @@ function Awards({ bettors }: { bettors: Bettor[] }) {
           <span><small>The Nate Silver Cup</small><b>{sharp.name}</b> off by {(sharp.avgError as number).toFixed(1)}{sharp.cupChance != null && <em>{chance(sharp.cupChance)} to keep it</em>}</span>
         </div>
       )}
+      {worst && (
+        <div className="lv-award lv-award-last">
+          <Award kind="last" chance={worst.lastChance} />
+          <span><small>G. Elliott Morris Participation Trophy</small><b>{worst.name}</b> off by {(worst.avgError as number).toFixed(1)}{worst.lastChance != null && <em>{chance(worst.lastChance)} stuck with it</em>}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -206,6 +219,7 @@ const TierTag = ({ tier }: { tier: string }) => <span className={`lv-tier lv-tie
 
 function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) {
   const lowest = Math.min(...bettors.map((b) => b.avgError ?? Infinity))
+  const highest = Math.max(...bettors.map((b) => b.avgError ?? -Infinity))
   const min = Math.min(0, ...bettors.map((b) => Math.min(b.lo, b.density.lo)))
   const max = Math.max(0, ...bettors.map((b) => Math.max(b.hi, b.density.hi)))
   const pad = (max - min) * 0.04 || 100
@@ -230,7 +244,7 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
           {bettors.map((b) => (
             <tr key={b.name} className={b.name === me ? 'me' : undefined}>
               <th scope="row">
-                <span className="lv-name">{b.name}{b === bettors[0] && <Award kind="money" chance={b.moneyChance} />}{b.avgError === lowest && <Award kind="cup" chance={b.cupChance} />}</span>
+                <span className="lv-name">{b.name}{b === bettors[0] && <Award kind="money" chance={b.moneyChance} />}{b.avgError === lowest && <Award kind="cup" chance={b.cupChance} />}{b.avgError === highest && highest > lowest && <Award kind="last" chance={b.lastChance} />}</span>
                 {b.avgError != null && b.bias != null && <small className="lv-stats-short"><TierTag tier={tierOf(b.avgError)} /> {b.avgError.toFixed(1)} · <span style={{ color: biasColor(b.bias) }}>{biasText(b.bias)}</span></small>}
               </th>
               <td className="lv-range-cell">

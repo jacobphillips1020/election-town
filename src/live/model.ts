@@ -195,6 +195,8 @@ export type Bettor = { name: string; paid: number; net: number; lo: number; hi: 
   avgError: number | null; bias: number | null
   /** Chance of finishing with the lowest average error, across the same finishes. Ties split. */
   cupChance: number | null
+  /** Chance of finishing with the highest average error. Ties split. */
+  lastChance: number | null
   /** Chance of finishing up the most money, across the same finishes. Ties split. */
   moneyChance: number
 }
@@ -513,6 +515,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   }
 
   const cupWins = new Float64Array(people.length)
+  const lastWins = new Float64Array(people.length)
   const moneyWins = new Float64Array(people.length)
   const forecasters = people.map((_, i) => i).filter((i) => picks[i] > 0)
   for (let d = 0; d < draws; d++) {
@@ -520,6 +523,10 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     for (const i of forecasters) best = Math.min(best, errorByDraw[i][d] / picks[i])
     const holders = forecasters.filter((i) => errorByDraw[i][d] / picks[i] === best)
     for (const i of holders) cupWins[i] += 1 / holders.length
+    let worst = -Infinity
+    for (const i of forecasters) worst = Math.max(worst, errorByDraw[i][d] / picks[i])
+    const stuck = forecasters.filter((i) => errorByDraw[i][d] / picks[i] === worst)
+    for (const i of stuck) lastWins[i] += 1 / stuck.length
     let most = -Infinity
     for (let i = 0; i < people.length; i++) most = Math.max(most, net[i][d])
     const richest = people.map((_, i) => i).filter((i) => net[i][d] === most)
@@ -533,7 +540,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     const sorted = Int32Array.from(net[i]).sort()
     return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: fadeFromMiddle(sorted),
       avgError: picks[i] ? errorSum[i] / picks[i] : null, bias: picks[i] ? biasSum[i] / picks[i] : null,
-      cupChance: picks[i] ? cupWins[i] / draws : null, moneyChance: moneyWins[i] / draws }
+      cupChance: picks[i] ? cupWins[i] / draws : null, lastChance: picks[i] ? lastWins[i] / draws : null, moneyChance: moneyWins[i] / draws }
   }).sort((x, y) => y.net - x.net)
 
   const memberBets = markets.map(toMember)
