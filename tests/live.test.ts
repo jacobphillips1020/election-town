@@ -154,6 +154,36 @@ describe('project', () => {
     expect(m.ticks.filter((x) => x.rank != null).map((x) => x.name).sort()).toEqual(['Close', 'Mid', 'Next'])
   })
 
+  test('average error and bias match a hand calculation once results are official', () => {
+    // Two settled races and one person's guesses, against a second person so payouts exist.
+    const inp = inputs()
+    const raceA = inp.markets[0]
+    const raceB = inp.markets[1]
+    inp.markets = [{ ...raceA, official: { winner: 'c1', share: 520, r: null } }, { ...raceB, official: { winner: 'c2', share: 530, r: null } }]
+    const e = (user: string, market: string, winner: string, c1: number) => ({ id: uuid(9000 + c1 + market.length * 7 + user.length * 1000), user, name: user, market, cents: 400, winner, shares: { c1, c2: 1000 - c1 }, r: null })
+    inp.entries = [
+      // Race A final: D +4.0. Guess D +10.0: 6 off, 6 toward D. Race B final: R +6.0. Guess D +2.0: 8 off, 8 toward D.
+      e('Pat', raceA.id, 'c1', 550), e('Pat', raceB.id, 'c1', 510),
+      // Race A: guess D +0.0 counts as 4 off, 4 toward R. Race B: guess R +10.0: 4 off, 4 toward R.
+      e('Sam', raceA.id, 'c1', 500), e('Sam', raceB.id, 'c2', 450),
+    ]
+    const { bettors } = project(inp, 200).members
+    const pat = bettors.find((b) => b.name === 'Pat')!
+    const sam = bettors.find((b) => b.name === 'Sam')!
+    expect(pat.avgError).toBeCloseTo(7, 2)
+    expect(pat.bias).toBeCloseTo(7, 2)
+    expect(sam.avgError).toBeCloseTo(4, 2)
+    expect(sam.bias).toBeCloseTo(-4, 2)
+  })
+
+  test('someone with only seat-count bets has no error or bias', () => {
+    const inp = inputs()
+    inp.entries = inp.entries.filter((e) => e.user !== 'Bo' || e.market === 's' || e.market === 'h')
+    const bo = project(inp, 300).members.bettors.find((b) => b.name === 'Bo')!
+    expect(bo.avgError).toBeNull()
+    expect(bo.bias).toBeNull()
+  })
+
   test('every error bar holds its estimate, and nobody can lose more than they paid', () => {
     for (const b of run.members.bettors) {
       expect(b.lo).toBeLessThanOrEqual(b.net + 1)

@@ -14,6 +14,8 @@ const lastName = (n: string) => n.trim().split(/\s+/).pop() as string
 const partyColor = (p?: string) => (p === 'R' ? '#b42318' : p === 'I' ? '#8a6a14' : '#1d4f9f')
 const chance = (p: number) => (p > 0.99 ? '>99%' : p < 0.01 ? '<1%' : `${Math.round(p * 100)}%`)
 const dollars = (cents: number) => `${cents < 0 ? '−' : cents > 0 ? '+' : ''}$${Math.abs(Math.round(cents / 100)).toLocaleString('en-US')}`
+const biasText = (b: number) => (Math.abs(b) < 0.05 ? 'even' : `${b > 0 ? 'D' : 'R'}+${Math.abs(b).toFixed(1)}`)
+const biasColor = (b: number) => (Math.abs(b) < 0.05 ? undefined : b > 0 ? '#1d4f9f' : '#b42318')
 const namesText = (names: string[]) => (names.length < 3 ? names.join(' & ') : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`)
 const roughly = (n: number) => (n >= 10000 ? Math.round(n / 1000) * 1000 : Math.round(n / 100) * 100).toLocaleString('en-US')
 const etTime = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(d).replace(':00', '').replace(' AM', ' a.m.').replace(' PM', ' p.m.')
@@ -149,17 +151,17 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
   return (
     <section className="lv-card">
       <h2 className="lv-h2">Scoreboard</h2>
-      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land.</p>
+      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land. Avg. error is how many points their race picks miss the projected margins by. Bias is the party they guessed too high.</p>
       <table className="lv-money">
         <thead>
-          <tr><th scope="col">Name</th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>
+          <tr><th scope="col">Name<span className="lv-stats-short">avg. error · bias</span></th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>
             <div className="lv-axis" aria-hidden="true">{ticks.map((c) => <span key={c} style={{ left: at(c) }}>{c === 0 ? '$0' : dollars(c)}</span>)}</div>
-          </th><th scope="col" className="num">Money</th><th scope="col" className="num">Bets won</th></tr>
+          </th><th scope="col" className="num">Money</th><th scope="col" className="num lv-stats-wide">Avg. error</th><th scope="col" className="num lv-stats-wide">Bias</th><th scope="col" className="num">Bets won</th></tr>
         </thead>
         <tbody>
           {bettors.map((b) => (
             <tr key={b.name} className={b.name === me ? 'me' : undefined}>
-              <th scope="row">{b.name}</th>
+              <th scope="row">{b.name}{b.avgError != null && b.bias != null && <small className="lv-stats-short">{b.avgError.toFixed(1)} · <span style={{ color: biasColor(b.bias) }}>{biasText(b.bias)}</span></small>}</th>
               <td className="lv-range-cell">
                 <div className="lv-range" role="img" aria-label={`${dollars(b.lo)} to ${dollars(b.hi)}`}>
                   <i className="lv-zero" style={{ left: at(0) }} />
@@ -168,6 +170,8 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
                 </div>
               </td>
               <td className="num"><b>{b.dollars === 0 ? '$0' : dollars(b.dollars * 100)}</b><small>{Math.abs(b.hi - b.lo) < 50 ? 'locked in' : `${dollars(b.lo)} to ${dollars(b.hi)}`}</small></td>
+              <td className="num lv-stats-wide"><b className="lv-stat-num">{b.avgError?.toFixed(1) ?? '–'}</b></td>
+              <td className="num lv-stats-wide"><b className="lv-stat-num" style={{ color: b.bias != null ? biasColor(b.bias) : undefined }}>{b.bias != null ? biasText(b.bias) : '–'}</b></td>
               <td className="num"><b>{b.bets.toFixed(1)}</b><small>of {b.of}</small></td>
             </tr>
           ))}

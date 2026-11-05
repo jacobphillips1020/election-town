@@ -186,7 +186,14 @@ export type MemberBet = {
   /** Everyone's guess, in the same units as the strip. */
   ticks: { name: string; x: number; side: string | null; rank: number | null }[]
 }
-export type Bettor = { name: string; paid: number; net: number; lo: number; hi: number; bets: number; of: number; dollars: number; density: Density }
+export type Bettor = { name: string; paid: number; net: number; lo: number; hi: number; bets: number; of: number; dollars: number; density: Density
+  /**
+   * Across this person's race picks, in margin points, against the simulated finishes. avgError: how far off on average.
+   * bias: guess minus final, on average; above 0 means they guessed too far toward the Democrat (or Nebraska's independent),
+   * below 0 too far toward the Republican. Null with no race picks. Seat-count bets are in seats, so they're left out.
+   */
+  avgError: number | null; bias: number | null
+}
 export type MembersLive = { bets: MemberBet[]; bettors: Bettor[] }
 
 function quantile(sorted: ArrayLike<number>, q: number) {
@@ -472,12 +479,39 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     return { id: m.id, rows: top, refund, moneyBack: pot ? moneyBack.get(m.id)! / draws / pot : 0, lean: leanLabel(Math.max(top[0]?.p ?? 0, refund)), refundLeads, ticks }
   }
 
+  // How close each person's race guesses run. Margins are from the non-Republican side, so they can be averaged across races.
+  const errorSum = new Float64Array(people.length)
+  const biasSum = new Float64Array(people.length)
+  const picks = new Int32Array(people.length)
+  for (const m of races) {
+    const [a] = m.candidates
+    const toward = a.party === 'R' ? -1 : 1
+    const fin = finals.get(m.id)!
+    for (const e of byMarket.get(m.id)!) {
+      const guessShare = e.shares?.[a.id]
+      if (!e.winner || guessShare == null) continue
+      const guess = toward * (guessShare / 5 - 100)
+      let err = 0
+      let off = 0
+      for (let d = 0; d < draws; d++) {
+        const diff = guess - toward * (200 * fin[d] - 100)
+        err += Math.abs(diff)
+        off += diff
+      }
+      const pi = personIndex.get(e.user)!
+      errorSum[pi] += err / draws
+      biasSum[pi] += off / draws
+      picks[pi] += 1
+    }
+  }
+
   // Projected money: dollars that sum to exactly zero across the table.
   const means = net.map((n) => n.reduce((a, b) => a + b, 0) / draws)
   const dollars = roundToTotal(means)
   const bettors: Bettor[] = people.map((u, i) => {
     const sorted = Int32Array.from(net[i]).sort()
-    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: fadeFromMiddle(sorted) }
+    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: fadeFromMiddle(sorted),
+      avgError: picks[i] ? errorSum[i] / picks[i] : null, bias: picks[i] ? biasSum[i] / picks[i] : null }
   }).sort((x, y) => y.net - x.net)
 
   const memberBets = markets.map(toMember)

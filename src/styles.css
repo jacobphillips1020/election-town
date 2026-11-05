@@ -490,6 +490,18 @@ thead.lv-vh { position: absolute; }
 .lv-money tbody th { font-weight: 650; font-size: .9rem; line-height: 1.15; padding-right: 4px; }
 .lv-money .num { text-align: right; width: 4.6rem; }
 .lv-money th.num:last-child, .lv-money td.num:last-child { width: 3rem; }
+.lv-money tbody th small { display: block; font-size: .68rem; font-weight: 500; color: var(--muted); white-space: nowrap; margin-top: 2px; }
+.lv-money thead th:first-child { width: 6rem; }
+.lv-money tbody th { width: 6rem; }
+.lv-money thead th .lv-stats-short { display: block; white-space: nowrap; font-size: .62rem; }
+.lv-stats-wide { display: none; }
+.lv-stat-num { font-weight: 600; }
+@media (min-width: 760px) {
+  .lv-stats-short, .lv-money thead th .lv-stats-short { display: none; }
+  .lv-stats-wide { display: table-cell; }
+  .lv-money th.num.lv-stats-wide, .lv-money td.num.lv-stats-wide { width: 4.2rem; }
+  .lv-money thead th:first-child, .lv-money tbody th { width: 6.5rem; }
+}
 .lv-money td.num b { display: block; font-size: .95rem; line-height: 1.15; }
 .lv-money td.num small { display: block; font-size: .66rem; line-height: 1.2; color: var(--muted); white-space: nowrap; }
 .lv-money tr.me th, .lv-money tr.me td { background: #fff7dc; }
