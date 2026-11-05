@@ -55,7 +55,8 @@ export function shareOfLeft(c: Count, left: number) {
   return left > 0 ? (known * c.countyShareA + (left - known) * state) / left : state
 }
 
-export type DrawnRace = { final: number; left: number }
+/** `first`: who cleared 50% of first choices, which skips the ranked-choice round. Only set in ranked-choice states with others on the ballot. */
+export type DrawnRace = { final: number; left: number; first: 'a' | 'b' | null }
 
 /** Side A's final two-way share in this draw. Ranked-choice states move eliminated ballots if nobody reached 50%. */
 export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnRace {
@@ -69,6 +70,7 @@ export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnR
   // Official canvasses move totals a hair even when "everything" is in.
   const canvass = 0.0002 * r.normal()
   let share = clamp((c.a + left * inLeft) / (n + left) + canvass, 0, 1)
+  let first: DrawnRace['first'] = null
   if (k.transfers?.length) {
     const othersNow = Object.values(c.others).reduce((a, b) => a + b, 0)
     const twoWay = n + left
@@ -86,9 +88,11 @@ export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnR
         b2 += votes * toB
       }
       share = a2 / (a2 + b2)
+    } else {
+      first = A >= B ? 'a' : 'b'
     }
   }
-  return { final: share, left }
+  return { final: share, left, first }
 }
 
 // ---------------------------------------------------------------- a seat, for the seat-count bets
@@ -150,6 +154,10 @@ export type PublicBet = {
   density?: Density
   /** Chance side A wins the race. */
   pA?: number
+  /** Ranked-choice states: how often someone clears 50% of first choices, skipping that round, and the smallest margin when they do. It's a jump, not a slide, so the range has a gap. */
+  firstRound?: { p: number; name: string; from: number }
+  /** Over 99% for one outcome of the bet. The same for everyone, ballots or not. */
+  called?: boolean
   /** Seat bets: chance of each Republican total. */
   hist?: { r: number; p: number }[]
   seatsLo?: number; seatsMid?: number; seatsHi?: number
@@ -270,6 +278,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const paid = people.map((u) => entries.filter((e) => e.user === u).reduce((a, e) => a + e.cents, 0))
   const pAWins = new Map(races.map((m) => [m.id, 0]))
   const msWins = { d: 0 }
+  const firsts = new Map<string, { a: number; b: number; minA: number; minB: number }>()
 
   // Seats: fixed ones get counted once; only live ones are drawn.
   const prep = (list: SeatCount[]) => list.map((s) => ({ s, sim: seatSim(s) }))
@@ -312,6 +321,12 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
         const got = drawRace(counts[m.id], k, r, national)
         shareA = got.final
         lefts.get(m.id)![d] = got.left
+        if (got.first) {
+          const f = firsts.get(m.id) ?? { a: 0, b: 0, minA: 100, minB: 100 }
+          const margin = Math.abs(2 * shareA - 1) * 100
+          if (got.first === 'a') { f.a += 1; f.minA = Math.min(f.minA, margin) } else { f.b += 1; f.minB = Math.min(f.minB, margin) }
+          firsts.set(m.id, f)
+        }
       }
       finals.get(m.id)![d] = shareA
       if (shareA > 0.5) pAWins.set(m.id, pAWins.get(m.id)! + 1)
@@ -387,6 +402,11 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     pub.share = { p5: 100 * quantile(sorted, 0.05), p10: 100 * quantile(sorted, 0.1), p50: 100 * quantile(sorted, 0.5), p90: 100 * quantile(sorted, 0.9), p95: 100 * quantile(sorted, 0.95) }
     pub.density = density(Float64Array.from(sorted, (x) => x * 100))
     pub.pA = pAWins.get(m.id)! / draws
+    const f = firsts.get(m.id)
+    if (f) {
+      const aMore = f.a >= f.b
+      pub.firstRound = { p: (aMore ? f.a : f.b) / draws, name: m.candidates[aMore ? 0 : 1].name, from: aMore ? f.minA : f.minB }
+    }
     pub.note = k.profile.note
     pub.done = k.profile.done
     return pub
@@ -430,10 +450,15 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: density(sorted, { soften: 3 }) }
   }).sort((x, y) => y.net - x.net)
 
+  const memberBets = markets.map(toMember)
   const bets = markets.map(toPublic).sort((a, b) => a.sort_order - b.sort_order)
+  for (const b of bets) {
+    const mb = memberBets.find((x) => x.id === b.id)!
+    b.called = Math.max(mb.rows[0]?.p ?? 0, mb.refund) > 0.99
+  }
   const updated = Object.values(counts).map((c) => c.updated).sort().pop() ?? input.fetchedAt
   return {
     pub: { version: 1, fetched_at: input.fetchedAt, updated_at: updated, draws, bets, pot_cents: entries.reduce((a, e) => a + e.cents, 0), people: people.length, unmodeled: input.unmodeled ?? [] },
-    members: { bets: markets.map(toMember), bettors },
+    members: { bets: memberBets, bettors },
   }
 }

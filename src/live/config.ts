@@ -84,11 +84,11 @@ export const SIDE_RACES: Record<string, KeyRace> = {
   },
   'New York governor': {
     raceId: 87329, state: 'NY',
-    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'New York counts early and Election Day votes first. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.', done: 'Mail ballots through Nov. 10.' },
+    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'New York counts early and Election Day votes first. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.' },
   },
   'NY-17 House': {
     raceId: 87319, state: 'NY', seatKey: 'ny-17',
-    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'About a tenth of the district is out. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.', done: 'Mail ballots through Nov. 10.' },
+    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'About a tenth of the district is out. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.' },
   },
 }
 

@@ -303,6 +303,27 @@ describe('ranked choice', () => {
     const finals = Array.from({ length: 500 }, () => drawRace(base, still, r, 0).final)
     expect(finals.reduce((a, b) => a + b, 0) / finals.length).toBeLessThan(48000 / 95000)
   })
+  test('Alaska\'s range has a gap: a first-round majority is a jump, not a slide', () => {
+    const run = project(inputs(), 8000)
+    const ak = run.pub.bets.find((b) => b.title === 'Alaska Senate')!
+    expect(ak.firstRound!.p).toBeGreaterThan(0.01)
+    expect(ak.firstRound!.p).toBeLessThan(0.5)
+    const a = rng(4)
+    const margins = Array.from({ length: 20000 }, () => { const d = drawRace(fixed.counts['Alaska Senate'], k, a, a.normal()); return { m: Math.abs(2 * d.final - 1) * 100, first: d.first } })
+    const lowest = Math.min(...margins.filter((x) => x.first === 'a').map((x) => x.m))
+    const justBelow = margins.filter((x) => x.first == null && x.m > lowest - 0.5 && x.m < lowest).length
+    const justAbove = margins.filter((x) => x.first === 'a' && x.m < lowest + 0.5).length
+    expect(justAbove).toBeGreaterThan(justBelow * 3)
+  })
+
+  test('the called flag agrees with the board, for visitors too', () => {
+    const run = project(inputs(), 3000)
+    for (const b of run.pub.bets) {
+      const m = run.members.bets.find((x) => x.id === b.id)!
+      expect(b.called).toBe(m.lean === 'Called')
+    }
+  })
+
   test('a first-round majority skips them', () => {
     const big: Count = { ...base, a: 52000, b: 43000 }
     const r = rng(1)

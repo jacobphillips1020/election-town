@@ -80,7 +80,7 @@ function Results({ data }: { data: Payload }) {
     const m = memberOf.get(b.id)
     return m ? Math.max(m.rows[0]?.p ?? 0, m.refund) : 1 - width(b) / 100
   }
-  const isOpen = (b: PublicBet) => !b.settled && (memberOf.has(b.id) ? certainty(b) <= 0.99 : width(b) >= 1)
+  const isOpen = (b: PublicBet) => !b.settled && !(b.called ?? (memberOf.has(b.id) ? certainty(b) > 0.99 : width(b) < 1))
   const openBets = live.bets.filter(isOpen)
   const openPot = openBets.reduce((a, b) => a + b.pot_cents, 0)
   const inOrder = [...live.bets].sort((a, b) => Number(a.side) - Number(b.side) || a.sort_order - b.sort_order)
@@ -94,7 +94,7 @@ function Results({ data }: { data: Payload }) {
     <main className="page lv" id="main">
       <header className="lv-head">
         <h1 className="lv-h1">Results are still coming in</h1>
-        {members && <p className="lv-stat"><b>{openBets.length} of {live.bets.length}</b> bets undecided, <b>${Math.round(openPot / 100)}</b> of ${Math.round(live.pot_cents / 100)} still in play</p>}
+        {<p className="lv-stat"><b>{openBets.length} of {live.bets.length}</b> bets undecided, <b>${Math.round(openPot / 100)}</b> of ${Math.round(live.pot_cents / 100)} still in play</p>}
         <p className="small muted">
           Updated {etStamp(fetched)}. {stale ? <strong className="lv-stale">This is older than it should be.</strong> : <>Next around {etTime(nextRun(fetched))}</>}
         </p>
@@ -247,6 +247,11 @@ function BetBody({ bet, m, me, before }: BetProps) {
         {bet.share || seatRows.length > 4 ? rangeLine(bet) : seatRows.map((h, i) => <span key={h.r}>{i ? ' · ' : ''}<b>{h.r}</b> {chance(h.p)}</span>)}
         {bet.open && bet.open.length > 0 && <span className="muted"> Depends on {bet.open.map((o) => o.title).join(' and ')}.</span>}
       </p>
+      {bet.firstRound && bet.firstRound.p > 0.01 && bet.firstRound.p < 0.99 && (
+        <p className="small muted lv-center">
+          In {chance(bet.firstRound.p)} of finishes, {lastName(bet.firstRound.name)} clears 50% of first choices. Then there’s no ranked-choice round, so the margin jumps to {lastName(bet.firstRound.name)} +{bet.firstRound.from.toFixed(1)} or more. That’s why the bar has a gap.
+        </p>
+      )}
       {m && (
         <ol className="lv-board">
           {m.rows.map((r, i) => (
@@ -317,11 +322,21 @@ function wedges(s: Scene) {
   const half = Math.max(Math.abs(b - a) / 2, 0.006)
   const from = center - half * Math.sign(b - a || 1)
   const to = center + half * Math.sign(b - a || 1)
-  return x.d.map((v, i) => {
-    const t0 = from + (i / x.d.length) * (to - from)
-    const t1 = from + ((i + 1) / x.d.length) * (to - from)
-    return { t0: Math.min(t0, t1), t1: Math.max(t0, t1), a: x.d.length < 2 ? 0.85 : alpha(v) }
-  }).filter((w) => w.a > 0.005)
+  if (x.d.length < 2) return [{ t0: Math.min(from, to), t1: Math.max(from, to), a: 0.85 }]
+  // Several wedges per slice, blending between neighbors, so the shading reads as a smooth gradient.
+  const n = x.d.length
+  const fine = n * 3
+  const out: { t0: number; t1: number; a: number }[] = []
+  for (let i = 0; i < fine; i++) {
+    const c = ((i + 0.5) / fine) * n - 0.5
+    const j = Math.floor(c)
+    const f = c - j
+    const v = (x.d[j] ?? 0) * (1 - f) + (x.d[j + 1] ?? 0) * f
+    const t0 = from + (i / fine) * (to - from)
+    const t1 = from + ((i + 1) / fine) * (to - from)
+    if (alpha(v) > 0.005) out.push({ t0: Math.min(t0, t1), t1: Math.max(t0, t1), a: alpha(v) })
+  }
+  return out
 }
 
 function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: number | null }) {
@@ -347,7 +362,7 @@ function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: numbe
         const b = Math.max(s.pos(z.from), s.pos(z.to))
         return <path key={i} d={arc(a, b, R0, R1)} className="lv-zone-refund" />
       })}
-      {wedges(s).map((w) => <path key={w.t0} d={arc(w.t0, w.t1, R0, R1)} fill={`rgb(${INK})`} fillOpacity={w.a} />)}
+      <g shapeRendering="crispEdges">{wedges(s).map((w) => <path key={w.t0} d={arc(w.t0, w.t1, R0, R1)} fill={`rgb(${INK})`} fillOpacity={w.a} />)}</g>
       {s.zs.slice(1).map((z, i) => {
         const p = s.pos(z.from)
         const [x0, y0] = polar(p, R0 - 3)
