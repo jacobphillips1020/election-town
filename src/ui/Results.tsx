@@ -159,7 +159,7 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
   return (
     <section className="lv-card">
       <h2 className="lv-h2">Scoreboard</h2>
-      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The darker the bar, the likelier that finish. The black tick is the projection, and the numbers show where 9 in 10 finishes land.</p>
+      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land.</p>
       <table className="lv-money">
         <thead>
           <tr><th scope="col">Name</th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>

@@ -200,7 +200,7 @@ function quantile(sorted: ArrayLike<number>, q: number) {
  * The real shape of a simulated result, from sorted draws. Continuous values get a lightly smoothed histogram; `discrete`
  * values (seat counts) get one bin per whole number. The extreme 0.4% of draws is trimmed so one freak draw can't stretch a bar.
  */
-export function density(sorted: ArrayLike<number>, opts: { bins?: number; discrete?: boolean; soften?: number } = {}): Density {
+export function density(sorted: ArrayLike<number>, opts: { bins?: number; discrete?: boolean } = {}): Density {
   const a = quantile(sorted, 0.002)
   const b = quantile(sorted, 0.998)
   const lo = opts.discrete ? Math.round(a) - 0.5 : a
@@ -213,16 +213,46 @@ export function density(sorted: ArrayLike<number>, opts: { bins?: number; discre
     if (v < lo || v > hi) continue
     raw[Math.min(bins - 1, Math.floor(((v - lo) / (hi - lo)) * bins))] += 1
   }
-  // Money comes in fixed payouts, so its draws land on a few exact amounts. `soften` blends neighbors so a bar reads as a
-  // range of outcomes instead of a row of spikes; separate clusters stay separate.
-  const reach = opts.soften ?? 1
-  const smooth = opts.discrete ? raw : raw.map((_, i) => {
-    let sum = 0
-    for (let j = -reach * 2; j <= reach * 2; j++) sum += (raw[i + j] ?? 0) * Math.exp(-(j * j) / (2 * reach * reach))
-    return sum
-  })
+  const smooth = opts.discrete ? raw : raw.map((v, i) => (raw[i - 1] ?? 0) + 2 * v + (raw[i + 1] ?? 0))
   const top = Math.max(...smooth, 1)
   return { lo, hi, d: smooth.map((v) => Math.round((v / top) * 1000) / 1000) }
+}
+
+/**
+ * A continuous error bar for results that land on a few exact amounts, like money. Darkness at x is the share of finishes at
+ * least that far out from the middle: 2 x min(share below, share above), rescaled so the middle is 1. It always falls away from
+ * the middle and never has holes. For a smooth result, the 9-in-10 limits sit at about 0.1. Between the exact amounts the share
+ * below is drawn as a straight line.
+ */
+export function fadeFromMiddle(sorted: ArrayLike<number>, bins = 60): Density {
+  const lo = quantile(sorted, 0.002)
+  const hi = quantile(sorted, 0.998)
+  if (!(hi > lo)) return { lo, hi, d: [1] }
+  const n = sorted.length
+  // Each distinct amount, with the share of finishes below it (counting half of those exactly on it).
+  const xs: number[] = []
+  const fs: number[] = []
+  for (let i = 0; i < n;) {
+    let j = i
+    while (j < n && sorted[j] === sorted[i]) j += 1
+    xs.push(sorted[i])
+    fs.push((i + (j - i) / 2) / n)
+    i = j
+  }
+  const below = (x: number) => {
+    if (x <= xs[0]) return fs[0]
+    if (x >= xs[xs.length - 1]) return fs[fs.length - 1]
+    let a = 0
+    let b = xs.length - 1
+    while (b - a > 1) { const m = (a + b) >> 1; if (xs[m] <= x) a = m; else b = m }
+    return fs[a] + ((fs[b] - fs[a]) * (x - xs[a])) / (xs[b] - xs[a])
+  }
+  const raw = Array.from({ length: bins }, (_, i) => {
+    const f = below(lo + ((i + 0.5) / bins) * (hi - lo))
+    return 2 * Math.min(f, 1 - f)
+  })
+  const top = Math.max(...raw)
+  return { lo, hi, d: raw.map((v) => Math.round((v / top) * 1000) / 1000) }
 }
 
 const hashSeed = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0 }
@@ -447,7 +477,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const dollars = roundToTotal(means)
   const bettors: Bettor[] = people.map((u, i) => {
     const sorted = Int32Array.from(net[i]).sort()
-    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: density(sorted, { soften: 3 }) }
+    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: fadeFromMiddle(sorted) }
   }).sort((x, y) => y.net - x.net)
 
   const memberBets = markets.map(toMember)

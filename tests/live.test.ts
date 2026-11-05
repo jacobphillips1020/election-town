@@ -6,7 +6,7 @@ import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
 import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
-import { density, drawRace, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
+import { density, drawRace, fadeFromMiddle, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
 import { shortName } from '../src/live/names'
 import { closestShares, payouts, type ScoreEntry } from '../src/live/scoring'
 import { zones } from '../src/live/zones'
@@ -243,6 +243,42 @@ describe('zones: who owns each stretch of the range', () => {
       const pay = payouts(entries, toOutcome(v / 100, 'c1', 'c2'))
       const paid = entries.filter((_, i) => pay[i].gross > 0).map((e) => `${(e.shares as Record<string, number>).c1 / 10}|${e.winner}`)
       expect(paid).toEqual([zone.owner])
+    }
+  })
+})
+
+describe('money bars fade continuously', () => {
+  const sorted = (xs: number[]) => Float64Array.from(xs).sort()
+  const fallsFromPeak = (d: number[]) => {
+    const peak = d.indexOf(Math.max(...d))
+    for (let i = 1; i <= peak; i++) expect(d[i]).toBeGreaterThanOrEqual(d[i - 1] - 1e-9)
+    for (let i = peak + 1; i < d.length; i++) expect(d[i]).toBeLessThanOrEqual(d[i - 1] + 1e-9)
+  }
+  test('payouts that land on a few exact amounts leave no holes', () => {
+    const out = fadeFromMiddle(sorted([...new Array(500).fill(-32), ...new Array(300).fill(4), ...new Array(150).fill(22), ...new Array(50).fill(40)]))
+    expect(Math.min(...out.d)).toBeGreaterThan(0)
+    fallsFromPeak(out.d)
+    expect(Math.max(...out.d)).toBe(1)
+  })
+  test('on a smooth result the 9-in-10 limits land near one tenth of the peak', () => {
+    const r = rng(8)
+    const xs = sorted(Array.from({ length: 40000 }, () => r.normal()))
+    const out = fadeFromMiddle(xs)
+    fallsFromPeak(out.d)
+    const at = (v: number) => out.d[Math.floor(((v - out.lo) / (out.hi - out.lo)) * out.d.length)]
+    expect(at(-1.645)).toBeCloseTo(0.1, 1)
+    expect(at(1.645)).toBeCloseTo(0.1, 1)
+    expect(at(0)).toBeGreaterThan(0.95)
+  })
+  test('a locked-in result is solid', () => {
+    expect(fadeFromMiddle(sorted(new Array(100).fill(9))).d).toEqual([1])
+  })
+  test('every real bettor bar in a projection is continuous', () => {
+    for (const b of project(inputs(), 3000).members.bettors) {
+      if (b.density.d.length > 1) {
+        expect(Math.min(...b.density.d.slice(2, -2))).toBeGreaterThan(0)
+        fallsFromPeak(b.density.d)
+      }
     }
   })
 })
