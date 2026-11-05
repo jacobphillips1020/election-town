@@ -93,7 +93,7 @@ export const FEED_RACE_IDS = [...Object.values(RACES).map((k: KeyRace) => k.race
 
 const UA = 'election-town/1.0 (friends prediction pool)'
 
-/** 16 requests, a few times a day. A failure on any race stops the run so the last good estimate stays up. */
+/** 16 requests, once an hour. A failure on any race stops the run so the last good estimate stays up. */
 export async function fetchFeed(get: typeof fetch = fetch): Promise<Record<number, FeedRace>> {
   const out: Record<number, FeedRace> = {}
   for (const id of FEED_RACE_IDS) {

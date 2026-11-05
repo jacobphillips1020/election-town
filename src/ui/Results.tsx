@@ -39,16 +39,6 @@ function marginRange(bet: PublicBet, a: number, b: number) {
 }
 const middle = (b: PublicBet) => (b.seatsMid != null ? `Republicans ${Math.round(b.seatsMid)}` : marginText(b, b.share!.p50))
 
-/** The job runs at these UTC hours (vercel.json); Vercel starts it some time within that hour. */
-const RUN_HOURS = [1, 7, 13, 19]
-function nextRun(after: Date) {
-  for (let i = 0; i < 48; i++) {
-    const t = new Date(Math.ceil(after.getTime() / 3600e3 + i) * 3600e3)
-    if (RUN_HOURS.includes(t.getUTCHours()) && t.getTime() > after.getTime() + 30 * 60e3) return t
-  }
-  return new Date(after.getTime() + 6 * 3600e3)
-}
-
 // ---------------------------------------------------------------- fading bars: darkness is the simulated chance of landing there
 
 const INK = '20, 42, 92'
@@ -88,7 +78,7 @@ function Results({ data }: { data: Payload }) {
   const called = inOrder.filter((b) => !isOpen(b))
   const before = (b: PublicBet) => previous?.bets.find((x) => x.id === b.id)?.p50 ?? null
   const fetched = new Date(live.fetched_at)
-  const stale = Date.now() - fetched.getTime() > 8 * 3600e3
+  const stale = Date.now() - fetched.getTime() > 3 * 3600e3
 
   return (
     <main className="page lv" id="main">
@@ -96,7 +86,7 @@ function Results({ data }: { data: Payload }) {
         <h1 className="lv-h1">Results are still coming in</h1>
         {<p className="lv-stat"><b>{openBets.length} of {live.bets.length}</b> bets undecided, <b>${Math.round(openPot / 100)}</b> of ${Math.round(live.pot_cents / 100)} still in play</p>}
         <p className="small muted">
-          Updated {etStamp(fetched)}. {stale ? <strong className="lv-stale">This is older than it should be.</strong> : <>Next around {etTime(nextRun(fetched))}</>}
+          Updated {etStamp(fetched)}. {stale ? <strong className="lv-stale">This is older than it should be.</strong> : <>Refreshes about every hour.</>}
         </p>
       </header>
 
@@ -132,7 +122,7 @@ function Results({ data }: { data: Payload }) {
       <details className="lv-method">
         <summary>How this is worked out</summary>
         <ol>
-          <li>Votes come from <a href="https://civicapi.org" target="_blank" rel="noreferrer">civicAPI</a>, by county, four times a day.</li>
+          <li>Votes come from <a href="https://civicapi.org" target="_blank" rel="noreferrer">civicAPI</a>, by county, about once an hour.</li>
           <li>For each race: how many votes are left (what the feed reports, plus late ballots it can’t see) and how they’ll split (each county’s split so far, plus how that state’s late vote usually runs). We’re unsure of both, and that uncertainty is what the shading shows.</li>
           <li>Alaska adds the ranked-choice step: if nobody reaches 50%, the last-place candidates’ ballots move to their next choice, or drop out if there isn’t one.</li>
           <li>The computer plays out {live.draws.toLocaleString('en-US')} possible finishes. Each one scores every bet the way the real payout does: right winner, closest vote share to a tenth of a point, ties split.</li>

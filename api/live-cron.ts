@@ -1,4 +1,4 @@
-// Results page job, four times a day (Vercel Cron, see vercel.json): fetch the counts, estimate, store one snapshot.
+// Results page job, hourly (Vercel Cron, see vercel.json: one once-a-day entry per hour, which is what the Hobby plan allows): fetch the counts, estimate, store one snapshot.
 // If anything fails, nothing is stored and the page keeps showing the last good estimate.
 import { createClient } from '@supabase/supabase-js'
 import { ranRecently, refreshLive } from './_live.js'
