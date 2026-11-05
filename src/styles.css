@@ -491,13 +491,42 @@ thead.lv-vh { position: absolute; }
 .lv-money .num { text-align: right; width: 4.6rem; }
 .lv-money th.num:last-child, .lv-money td.num:last-child { width: 3rem; }
 .lv-money tbody th small { display: block; font-size: .68rem; font-weight: 500; color: var(--muted); white-space: nowrap; margin-top: 2px; }
-.lv-money thead th:first-child { width: 6rem; }
-.lv-money tbody th { width: 6rem; }
+.lv-money thead th:first-child { width: 6.7rem; }
+.lv-money tbody th { width: 6.7rem; }
 .lv-money thead th .lv-stats-short { display: block; white-space: nowrap; font-size: .62rem; }
 .lv-stats-wide { display: none; }
 .lv-stat-num { font-weight: 600; }
+.lv-name { display: inline-flex; align-items: center; gap: 3px; }
+.lv-tier { font: 700 .66rem/1 Georgia, "Times New Roman", serif; letter-spacing: .04em; text-transform: uppercase; border-radius: 3px; }
+.lv-tier-elite { color: #3d2e00; background: linear-gradient(180deg, #f3d77a, #c9a227); padding: 3px 6px; box-shadow: inset 0 0 0 1px #8a6a14; }
+.lv-tier-great { color: #5c4708; background: #f6e9bd; padding: 3px 6px; box-shadow: inset 0 0 0 1px #d9bd63; }
+.lv-tier-good { color: var(--ink); padding: 3px 6px; box-shadow: inset 0 0 0 1px var(--line); }
+.lv-tier-mid { color: var(--muted); padding: 3px 6px; }
+.lv-stats-short .lv-tier { padding: 1px 4px; font-size: .58rem; margin-right: 1px; }
+.lv-stats-short .lv-tier-mid { padding-left: 0; }
+.lv-tier-col { width: 4.4rem; text-align: center !important; }
+.lv-cup { position: relative; display: inline-flex; }
+.lv-cup-btn { all: unset; cursor: pointer; display: inline-flex; padding: 3px; margin: -3px 0; border-radius: 4px; color: #b58f16; line-height: 0; }
+.lv-cup-btn svg { fill: currentColor; filter: drop-shadow(0 1px 0 #6f5510); }
+.lv-coin-mark { font: 800 15px Georgia, "Times New Roman", serif; fill: #fffdf8; }
+.lv-awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 8px; margin: 8px 0 10px; }
+.lv-award { display: flex; gap: 8px; align-items: center; padding: 7px 10px; background: #fbf4dc; border: 1px solid #e3cf8a; border-radius: 5px; line-height: 1.25; font-size: .92rem; }
+.lv-award .lv-cup-btn svg { width: 24px; height: 24px; }
+.lv-award small { display: block; font: 700 .68rem/1.3 Georgia, "Times New Roman", serif; letter-spacing: .05em; text-transform: uppercase; color: #6f5510; }
+.lv-award em { display: block; font-style: normal; font-size: .72rem; color: var(--muted); }
+.lv-cup-btn:hover { color: #d4ad2c; }
+.lv-cup-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.lv-cup-pop { position: absolute; z-index: 20; left: -6px; top: calc(100% + 6px); width: 13rem; display: block; background: #0b1a3d; color: #fff; border: 2px solid #c9a227; border-radius: 6px; padding: 6px 6px 8px; box-shadow: 0 8px 22px rgba(11, 26, 61, .35); text-align: center; white-space: normal; animation: lv-cup-in 160ms ease-out; }
+@keyframes lv-cup-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+@media (prefers-reduced-motion: reduce) { .lv-cup-pop { animation: none; } }
+.lv-cup-photo { position: relative; display: block; border-radius: 3px; overflow: hidden; }
+.lv-cup-photo img { display: block; width: 100%; height: auto; }
+.lv-cup-goat { position: absolute; left: 0; right: 0; bottom: 6px; font: 900 2.9rem/1 Georgia, "Times New Roman", serif; letter-spacing: .03em; text-align: center; transform: rotate(-5deg);
+  background: linear-gradient(180deg, #fff6d0 8%, #e5bf45 45%, #8a6a14 55%, #f3d77a 95%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 1px #2c2102; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .6)); }
+.lv-cup-pop .lv-cup-title { display: block; margin-top: 7px; font: 700 .92rem/1.15 Georgia, "Times New Roman", serif; color: #f3d77a; }
+.lv-cup-pop small, .lv-money tbody th .lv-cup-pop small { display: block; margin-top: 2px; font: 400 .7rem/1.3 system-ui, sans-serif; color: #dfe6f5; white-space: normal; }
 @media (min-width: 760px) {
-  .lv-stats-short, .lv-money thead th .lv-stats-short { display: none; }
+  .lv-stats-short, .lv-money thead th .lv-stats-short, .lv-money tbody th small.lv-stats-short { display: none; }
   .lv-stats-wide { display: table-cell; }
   .lv-money th.num.lv-stats-wide, .lv-money td.num.lv-stats-wide { width: 4.2rem; }
   .lv-money thead th:first-child, .lv-money tbody th { width: 6.5rem; }

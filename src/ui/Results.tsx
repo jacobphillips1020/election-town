@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp, useRpc } from '../data/context'
+import { TIER_LINES, tierOf } from '../live/config'
 import type { Bettor, Density, MemberBet, MembersLive, PublicBet, PublicLive } from '../live/model'
 import { shortName } from '../live/names'
 import { tickKey, zones, type Zone } from '../live/zones'
@@ -138,7 +139,73 @@ function Results({ data }: { data: Payload }) {
 
 // ---------------------------------------------------------------- the money
 
+const TROPHY = 'M7 3h10v2h4v2.5c0 2.8-2.1 5-4.8 5.4A5.1 5.1 0 0 1 13 15.8V18h3a1 1 0 0 1 1 1v2H7v-2a1 1 0 0 1 1-1h3v-2.200a5.100 5.100 0 0 1-3.200-2.900C5.100 12.500 3 10.300 3 7.500V5h4V3Zm0 4H5v.5c0 1.500.8 2.800 2 3.400V7Zm10 0v3.900c1.200-.6 2-1.900 2-3.400V7h-2Z'
+
+/** The two awards. Hover, tap or tab to one. The cup comes with the man himself. */
+function Award({ kind, chance: keep }: { kind: 'cup' | 'money'; chance: number | null | undefined }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  const cup = kind === 'cup'
+  const title = cup ? 'The Nate Silver Cup' : 'Money Winner'
+  const reason = cup ? 'Lowest average error' : 'Most money won'
+  return (
+    <span className="lv-cup" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" className="lv-cup-btn" aria-label={title} aria-expanded={open}
+        onClick={() => setOpen(true)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onPointerDown={(e) => e.stopPropagation()}>
+        {cup ? (
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d={TROPHY} /></svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="12" cy="12" r="10" /><text x="12" y="17" textAnchor="middle" className="lv-coin-mark">$</text></svg>
+        )}
+      </button>
+      {open && (
+        <span className="lv-cup-pop" role="status">
+          {cup && (
+            <span className="lv-cup-photo">
+              <img src="/nate-silver-cup.png" alt="Nate Silver" />
+              <b className="lv-cup-goat">GOAT</b>
+            </span>
+          )}
+          <b className="lv-cup-title">{title}</b>
+          <small>{reason}{keep != null ? `. ${chance(keep)} to keep it.` : '.'}</small>
+        </span>
+      )}
+    </span>
+  )
+}
+
+function Awards({ bettors }: { bettors: Bettor[] }) {
+  const rich = bettors[0]
+  const sharp = [...bettors].filter((b) => b.avgError != null).sort((a, b) => (a.avgError as number) - (b.avgError as number))[0]
+  return (
+    <div className="lv-awards">
+      {rich && (
+        <div className="lv-award">
+          <Award kind="money" chance={rich.moneyChance} />
+          <span><small>Money Winner</small><b>{rich.name}</b> {dollars(rich.net)}{rich.moneyChance != null && <em>{chance(rich.moneyChance)} to keep it</em>}</span>
+        </div>
+      )}
+      {sharp && (
+        <div className="lv-award">
+          <Award kind="cup" chance={sharp.cupChance} />
+          <span><small>The Nate Silver Cup</small><b>{sharp.name}</b> off by {(sharp.avgError as number).toFixed(1)}{sharp.cupChance != null && <em>{chance(sharp.cupChance)} to keep it</em>}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const TierTag = ({ tier }: { tier: string }) => <span className={`lv-tier lv-tier-${tier.toLowerCase()}`}>{tier}</span>
+
 function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) {
+  const lowest = Math.min(...bettors.map((b) => b.avgError ?? Infinity))
   const min = Math.min(0, ...bettors.map((b) => Math.min(b.lo, b.density.lo)))
   const max = Math.max(0, ...bettors.map((b) => Math.max(b.hi, b.density.hi)))
   const pad = (max - min) * 0.04 || 100
@@ -151,17 +218,21 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
   return (
     <section className="lv-card">
       <h2 className="lv-h2">Scoreboard</h2>
-      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land. Avg. error is how many points their race picks miss the projected margins by. Bias is the party they guessed too high.</p>
+      <Awards bettors={bettors} />
+      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land. Avg. error is how many points their race picks miss the projected margins by, and it sets the tier: {TIER_LINES.map(([t, line]) => `${t} under ${line}`).join(', ')}. Bias is the party they guessed too high.</p>
       <table className="lv-money">
         <thead>
-          <tr><th scope="col">Name<span className="lv-stats-short">avg. error · bias</span></th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>
+          <tr><th scope="col">Name<span className="lv-stats-short">tier · error · bias</span></th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>
             <div className="lv-axis" aria-hidden="true">{ticks.map((c) => <span key={c} style={{ left: at(c) }}>{c === 0 ? '$0' : dollars(c)}</span>)}</div>
-          </th><th scope="col" className="num">Money</th><th scope="col" className="num lv-stats-wide">Avg. error</th><th scope="col" className="num lv-stats-wide">Bias</th><th scope="col" className="num">Bets won</th></tr>
+          </th><th scope="col" className="num">Money</th><th scope="col" className="lv-stats-wide lv-tier-col">Tier</th><th scope="col" className="num lv-stats-wide">Avg. error</th><th scope="col" className="num lv-stats-wide">Bias</th><th scope="col" className="num">Bets won</th></tr>
         </thead>
         <tbody>
           {bettors.map((b) => (
             <tr key={b.name} className={b.name === me ? 'me' : undefined}>
-              <th scope="row">{b.name}{b.avgError != null && b.bias != null && <small className="lv-stats-short">{b.avgError.toFixed(1)} · <span style={{ color: biasColor(b.bias) }}>{biasText(b.bias)}</span></small>}</th>
+              <th scope="row">
+                <span className="lv-name">{b.name}{b === bettors[0] && <Award kind="money" chance={b.moneyChance} />}{b.avgError === lowest && <Award kind="cup" chance={b.cupChance} />}</span>
+                {b.avgError != null && b.bias != null && <small className="lv-stats-short"><TierTag tier={tierOf(b.avgError)} /> {b.avgError.toFixed(1)} · <span style={{ color: biasColor(b.bias) }}>{biasText(b.bias)}</span></small>}
+              </th>
               <td className="lv-range-cell">
                 <div className="lv-range" role="img" aria-label={`${dollars(b.lo)} to ${dollars(b.hi)}`}>
                   <i className="lv-zero" style={{ left: at(0) }} />
@@ -170,6 +241,7 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
                 </div>
               </td>
               <td className="num"><b>{b.dollars === 0 ? '$0' : dollars(b.dollars * 100)}</b><small>{Math.abs(b.hi - b.lo) < 50 ? 'locked in' : `${dollars(b.lo)} to ${dollars(b.hi)}`}</small></td>
+              <td className="lv-stats-wide lv-tier-col">{b.avgError != null ? <TierTag tier={tierOf(b.avgError)} /> : '–'}</td>
               <td className="num lv-stats-wide"><b className="lv-stat-num">{b.avgError?.toFixed(1) ?? '–'}</b></td>
               <td className="num lv-stats-wide"><b className="lv-stat-num" style={{ color: b.bias != null ? biasColor(b.bias) : undefined }}>{b.bias != null ? biasText(b.bias) : '–'}</b></td>
               <td className="num"><b>{b.bets.toFixed(1)}</b><small>of {b.of}</small></td>

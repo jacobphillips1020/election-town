@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test } from 'vitest'
 import { AUTH_STUB, MIGRATIONS } from '../src/data/migrations'
 import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
-import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, type KeyRace } from '../src/live/config'
+import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, tierOf, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
 import { density, drawRace, fadeFromMiddle, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
 import { shortName } from '../src/live/names'
@@ -182,6 +182,18 @@ describe('project', () => {
     const bo = project(inp, 300).members.bettors.find((b) => b.name === 'Bo')!
     expect(bo.avgError).toBeNull()
     expect(bo.bias).toBeNull()
+  })
+
+  test('tiers follow the fixed lines, and nobody is pushed into one by rank', () => {
+    expect([2, 3.49, 3.5, 4.49, 4.5, 5.49, 5.5, 9].map(tierOf)).toEqual(['Elite', 'Elite', 'Great', 'Great', 'Good', 'Good', 'Mid', 'Mid'])
+  })
+
+  test('the chances for both awards each add up to 100%', () => {
+    const { bettors } = project(inputs(), 2000).members
+    expect(bettors.reduce((a, b) => a + (b.cupChance ?? 0), 0)).toBeCloseTo(1, 6)
+    expect(bettors.reduce((a, b) => a + b.moneyChance, 0)).toBeCloseTo(1, 6)
+    const lowest = bettors.reduce((a, b) => ((a.avgError as number) <= (b.avgError as number) ? a : b))
+    expect(lowest.cupChance).toBeGreaterThan(0)
   })
 
   test('every error bar holds its estimate, and nobody can lose more than they paid', () => {

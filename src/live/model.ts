@@ -193,6 +193,10 @@ export type Bettor = { name: string; paid: number; net: number; lo: number; hi: 
    * below 0 too far toward the Republican. Null with no race picks. Seat-count bets are in seats, so they're left out.
    */
   avgError: number | null; bias: number | null
+  /** Chance of finishing with the lowest average error, across the same finishes. Ties split. */
+  cupChance: number | null
+  /** Chance of finishing up the most money, across the same finishes. Ties split. */
+  moneyChance: number
 }
 export type MembersLive = { bets: MemberBet[]; bettors: Bettor[] }
 
@@ -481,6 +485,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
 
   // How close each person's race guesses run. Margins are from the non-Republican side, so they can be averaged across races.
   const errorSum = new Float64Array(people.length)
+  const errorByDraw = people.map(() => new Float32Array(draws))
   const biasSum = new Float64Array(people.length)
   const picks = new Int32Array(people.length)
   for (const m of races) {
@@ -493,16 +498,32 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       const guess = toward * (guessShare / 5 - 100)
       let err = 0
       let off = 0
+      const pi = personIndex.get(e.user)!
+      const byDraw = errorByDraw[pi]
       for (let d = 0; d < draws; d++) {
         const diff = guess - toward * (200 * fin[d] - 100)
         err += Math.abs(diff)
         off += diff
+        byDraw[d] += Math.abs(diff)
       }
-      const pi = personIndex.get(e.user)!
       errorSum[pi] += err / draws
       biasSum[pi] += off / draws
       picks[pi] += 1
     }
+  }
+
+  const cupWins = new Float64Array(people.length)
+  const moneyWins = new Float64Array(people.length)
+  const forecasters = people.map((_, i) => i).filter((i) => picks[i] > 0)
+  for (let d = 0; d < draws; d++) {
+    let best = Infinity
+    for (const i of forecasters) best = Math.min(best, errorByDraw[i][d] / picks[i])
+    const holders = forecasters.filter((i) => errorByDraw[i][d] / picks[i] === best)
+    for (const i of holders) cupWins[i] += 1 / holders.length
+    let most = -Infinity
+    for (let i = 0; i < people.length; i++) most = Math.max(most, net[i][d])
+    const richest = people.map((_, i) => i).filter((i) => net[i][d] === most)
+    for (const i of richest) moneyWins[i] += 1 / richest.length
   }
 
   // Projected money: dollars that sum to exactly zero across the table.
@@ -511,7 +532,8 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const bettors: Bettor[] = people.map((u, i) => {
     const sorted = Int32Array.from(net[i]).sort()
     return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: fadeFromMiddle(sorted),
-      avgError: picks[i] ? errorSum[i] / picks[i] : null, bias: picks[i] ? biasSum[i] / picks[i] : null }
+      avgError: picks[i] ? errorSum[i] / picks[i] : null, bias: picks[i] ? biasSum[i] / picks[i] : null,
+      cupChance: picks[i] ? cupWins[i] / draws : null, moneyChance: moneyWins[i] / draws }
   }).sort((x, y) => y.net - x.net)
 
   const memberBets = markets.map(toMember)

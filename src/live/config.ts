@@ -137,3 +137,11 @@ export function leanLabel(p: number): LeanLabel {
   if (p >= 0.6) return 'Leans'
   return 'Tilt'
 }
+
+export type Tier = 'Elite' | 'Great' | 'Good' | 'Mid'
+/**
+ * Forecaster tiers, by average miss on the projected margins in points. Fixed lines, not a curve, so everyone can be Elite
+ * or nobody can. For scale, final Senate polling averages usually miss by about 5.
+ */
+export const TIER_LINES: [Tier, number][] = [['Elite', 3.5], ['Great', 4.5], ['Good', 5.5]]
+export const tierOf = (avgError: number): Tier => TIER_LINES.find(([, line]) => avgError < line)?.[0] ?? 'Mid'
