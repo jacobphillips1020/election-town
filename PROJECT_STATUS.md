@@ -59,6 +59,14 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
   Model forecasts (DDHQ, Silver Bulletin, Poliwave) block automated access or are paywalled.
 - "Now" = today's Senate (53 R); the House row is the 2024 result (220 R). Hard-coded in `src/domain/senate.ts`.
 
+## Results page (`/results`)
+After polls close, this page estimates where the count ends up and what that means for the money.
+- **Votes:** [civicAPI](https://civicapi.org), free and public, county by county. 16 requests per run. Each run happens four times a day from `api/live-cron.ts` (Vercel Cron: 1, 7, 13, 19 UTC). A failed run stores nothing, so the last good estimate stays up. You can run it by opening `/api/live-cron` (at most once per 20 minutes).
+- **Method:** `src/live/model.ts` plays out 40,000 finishes. For each race it draws votes left and how they split (`src/live/config.ts` holds each state's assumptions), then scores every bet with `src/live/scoring.ts`. `tests/live.test.ts` holds that scoring to `app.compute_outcome` to the cent, and checks money nets to $0 and bets won + refunds = number of bets.
+- **"Called"** is only ever about a bettor's guess being over 99% to win the bet. News-desk calls are not used. Lean words never describe candidates.
+- **Privacy:** vote counts and race estimates are public. Names beside picks and money are members-only (`get_live`). `live_snapshots` keeps every run. The repo holds only public vote counts (`src/demo/live-counts.json`, used by the demo and tests).
+- **New side bets** need a line in `SIDE_RACES` or they're left out, and the page says so.
+
 ## Code map
 
 - `supabase/migrations/` (10 files; `20261011000001_main_pool.sql` is the v2 pool, `…000002_expert_ratings.sql` moves

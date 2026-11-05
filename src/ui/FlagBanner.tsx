@@ -15,6 +15,7 @@ export function Masthead() {
       </Link>
       <nav className="menubar" aria-label="Main">
         <Link to="/" {...current(at('/'))}>The Pool</Link>
+        <Link to="/results" {...current(at('/results'))}>Results</Link>
         <Link to="/ballot" {...current(at('/ballot') || at('/card'))}>My Ballot</Link>
         <Link to="/side" {...current(at('/side') || at('/open'))}>Side Bets</Link>
         <span className="menubar-fill" />

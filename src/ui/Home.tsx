@@ -154,7 +154,12 @@ function Hero({ pool, submitted }: { pool: Pool; submitted: boolean }) {
           </p>
         </div>
       )}
-      {pool.closed && submitted && <div className="hero-cta"><Link className="btn ghost big" to="/card">My picks card</Link></div>}
+      {pool.closed && (
+        <div className="hero-cta">
+          <Link className="btn big" to="/results">See the results</Link>
+          {submitted && <Link className="btn ghost big" to="/card">My picks card</Link>}
+        </div>
+      )}
     </section>
   )
 }

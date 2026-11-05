@@ -457,3 +457,97 @@ table.grid .seat-row td { color: var(--ink); background: #f1ece0; }
 .rules-more summary { cursor: pointer; color: var(--dem); font-size: .85rem; }
 .prow-hit { padding: 10px 4px; }
 .prow-hit p { margin: 2px 0 0; }
+
+/* results page */
+.lv-h1 { font-family: Georgia, "Times New Roman", serif; font-size: 1.9rem; margin: 2px 0 6px; }
+.lv-h2 { font-family: Georgia, "Times New Roman", serif; font-size: 1.15rem; margin: 0 0 2px; }
+.lv-head { border-top: 4px solid #b22234; padding-top: 10px; margin-top: 4px; }
+.lv-head p { margin: 0; }
+.lv-stat { font-size: 1.05rem; }
+.lv-stale { color: var(--warn); }
+.lv-card { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 14px; margin-top: 14px; }
+.lv-sub { margin: 0 0 8px; }
+.lv-key { margin: 16px 0 0; }
+.lv-center { text-align: center; margin-bottom: 6px; }
+
+.lv-needle svg { display: block; width: 100%; max-width: 420px; margin: 6px auto 0; }
+.lv-dial-label { font: 700 10.5px system-ui, sans-serif; }
+.lv-dial-end { font: 700 12px system-ui, sans-serif; fill: var(--ink); }
+.lv-pointer { transition: transform 900ms cubic-bezier(.2, .8, .2, 1); }
+.lv-pointer-line { stroke: var(--ink); stroke-width: 3.5; stroke-linecap: round; }
+.lv-ghost { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+@media (prefers-reduced-motion: reduce) { .lv-pointer { transition: none; } }
+.lv-needle-big { text-align: center; font: 700 1.7rem/1.1 Georgia, "Times New Roman", serif; margin: 2px 0 6px; }
+.lv-needle-unit { font-size: 1rem; font-weight: 400; color: var(--muted); }
+
+.lv-vh { position: absolute; left: -999px; }
+.lv-money { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.lv-money th, .lv-money td { padding: 7px 0; border-top: 1px solid var(--line); vertical-align: middle; text-align: left; font-weight: 400; }
+.lv-money thead th { border-top: 0; font-size: .72rem; color: var(--muted); padding: 0 0 4px; vertical-align: bottom; }
+.lv-money thead th:first-child, .lv-money tbody th { width: 5.1rem; }
+.lv-money tbody th { font-weight: 650; font-size: .9rem; line-height: 1.15; padding-right: 4px; }
+.lv-money .num { text-align: right; width: 4.6rem; }
+.lv-money th.num:last-child, .lv-money td.num:last-child { width: 3rem; }
+.lv-money td.num b { display: block; font-size: .95rem; line-height: 1.15; }
+.lv-money td.num small { display: block; font-size: .66rem; line-height: 1.2; color: var(--muted); white-space: nowrap; }
+.lv-money tr.me th, .lv-money tr.me td { background: #fff7dc; }
+.lv-axis { position: relative; height: 14px; }
+.lv-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-size: .66rem; }
+.lv-range { position: relative; height: 22px; }
+.lv-range i { position: absolute; display: block; }
+.lv-zero { top: -8px; bottom: -8px; width: 1px; background: #8d877a; }
+.lv-bar { top: 8px; height: 6px; border-radius: 3px; background: #a8a397; min-width: 2px; }
+.lv-mid { top: 3px; width: 3px; height: 16px; margin-left: -1.5px; border-radius: 2px; background: var(--ink); }
+
+.lv-group { margin-top: 22px; }
+.lv-group-title { font-family: Georgia, "Times New Roman", serif; font-size: 1.3rem; margin: 0; padding-bottom: 4px; border-bottom: 2px solid #142a5c; }
+.lv-open { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 12px; margin-top: 12px; }
+.lv-open .lv-card { margin: 0; }
+.lv-bet-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; }
+.lv-bet-head h3 { margin: 0; font: 700 1.05rem/1.2 Georgia, "Times New Roman", serif; }
+.lv-bet-head h3 small { margin-left: 6px; font: 400 .78rem system-ui, sans-serif; color: var(--muted); }
+.lv-bet-line { margin: 6px 0 4px; }
+.lv-bet-note { margin: 8px 0 0; font-size: .8rem; }
+
+.lv-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: .78rem; font-weight: 700; line-height: 1.5; white-space: nowrap; }
+.lv-chip-tilt { background: #e6eaf3; color: #142a5c; }
+.lv-chip-leans { background: #c3cde3; color: #142a5c; }
+.lv-chip-likely { background: #7f93bd; color: #0b1a3d; }
+.lv-chip-very-likely { background: #3f5a94; color: #fff; }
+.lv-chip-called { background: #142a5c; color: #fff; }
+
+.lv-strip { display: block; width: 100%; margin: 4px 0 2px; }
+.lv-strip-axis { stroke: var(--line); stroke-width: 1.5; }
+.lv-strip-flip { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 2; }
+.lv-strip-band { fill: #a8a397; opacity: .55; }
+.lv-strip-mid { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; }
+.lv-strip-num { font: 700 10px system-ui, sans-serif; fill: #fff; }
+.lv-strip-end { font: 400 9.5px system-ui, sans-serif; fill: var(--muted); }
+
+.lv-board { list-style: none; margin: 6px 0 0; padding: 0; }
+.lv-board li { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr) 4rem 2.6rem; gap: 6px; align-items: center; padding: 5px 2px; border-top: 1px solid var(--line); }
+.lv-board li.me { background: #fff7dc; }
+.lv-rank { font-size: .78rem; font-weight: 700; color: var(--muted); text-align: center; }
+.lv-who { font-size: .92rem; font-weight: 650; line-height: 1.2; }
+.lv-who small { font-weight: 400; color: var(--muted); }
+.lv-guess { display: block; font-size: .72rem; }
+.lv-pbar { height: 8px; background: #efeadd; border-radius: 4px; overflow: hidden; }
+.lv-pbar i { display: block; height: 100%; background: #142a5c; border-radius: 4px; }
+.lv-refund .lv-pbar i { background: #a8a397; }
+.lv-refund .lv-who { font-weight: 400; }
+.lv-p { text-align: right; font-size: .95rem; }
+
+.lv-called { margin-top: 8px; }
+.lv-called details { border-bottom: 1px solid var(--line); }
+.lv-called summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 2px; cursor: pointer; list-style: none; min-height: 44px; }
+.lv-called summary::-webkit-details-marker { display: none; }
+.lv-called-race b { display: block; line-height: 1.2; font-size: .92rem; }
+.lv-called-race small { color: var(--muted); font-size: .76rem; }
+.lv-called-who { font-size: .88rem; line-height: 1.2; }
+.lv-called-who.me { font-weight: 700; }
+.lv-called-more { padding: 0 2px 10px; }
+
+.lv-method { margin-top: 22px; font-size: .9rem; }
+.lv-method summary { cursor: pointer; font-weight: 650; min-height: 44px; display: flex; align-items: center; }
+.lv-method ol { padding-left: 1.2rem; margin: 4px 0 8px; }
+.lv-method li { margin-bottom: 6px; }

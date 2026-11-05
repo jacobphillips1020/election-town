@@ -18,7 +18,7 @@ function scenario(): 'open' | 'closed' {
   }
 }
 const SCENARIO = scenario()
-const DB_NAME = `idb://election-town-demo-v11${SCENARIO === 'closed' ? '-closed' : ''}`
+const DB_NAME = `idb://election-town-demo-v14${SCENARIO === 'closed' ? '-closed' : ''}`
 const ACTOR_KEY = 'et-demo-actor'
 
 export const PERSONAS: Persona[] = [
@@ -30,6 +30,27 @@ export const PERSONAS: Persona[] = [
   { id: 'd0000000-0000-4000-8000-000000000006', name: 'Sam', note: 'Signed in, not in the group' },
 ]
 
+/** The demo's Results page: this election's real public vote counts against the demo's fictional ballots. */
+async function seedLive(db: import('@electric-sql/pglite').PGlite) {
+  const [{ project }, { shortName }, { RACES }, counts] = await Promise.all([
+    import('../live/model'), import('../live/names'), import('../live/config'), import('../demo/live-counts.json'),
+  ])
+  type M = { id: string; title: string; kind: string; sort_order: number; featured: boolean; candidates: { id: string; name: string; party: string }[] }
+  const fixed = counts.default as unknown as { counts: Record<string, import('../live/feed').Count>; mississippi: import('../live/feed').Count; senateSeats: import('../live/feed').SeatCount[]; houseSeats: import('../live/feed').SeatCount[] }
+  const entries = (await db.query<{ id: string; user_id: string; display_name: string; market_id: string; commitment_cents: number; winner_id: string | null; shares: Record<string, number> | null; seats: { r?: number } | null }>(
+    `select e.id, e.user_id, p.display_name, e.market_id, e.commitment_cents, e.winner_id, e.shares, e.seats from public.entries e join public.profiles p on p.user_id = e.user_id`)).rows
+  const markets = (await db.query<M>(`select id, title, kind, sort_order, featured, candidates from public.markets where status = 'open'`)).rows
+    .filter((m) => entries.some((e) => e.market_id === m.id) && (RACES[m.title] || m.kind.endsWith('_seats')))
+  const fetchedAt = new Date().toISOString()
+  const { pub, members } = project({
+    markets, fetchedAt,
+    entries: entries.filter((e) => markets.some((m) => m.id === e.market_id)).map((e) => ({ id: e.id, user: e.user_id, name: shortName(e.display_name), market: e.market_id, cents: e.commitment_cents, winner: e.winner_id, shares: e.shares, r: e.seats?.r ?? null })),
+    counts: Object.fromEntries(markets.filter((m) => RACES[m.title]).map((m) => [m.id, fixed.counts[m.title]])),
+    mississippi: fixed.mississippi, senateSeats: fixed.senateSeats, houseSeats: fixed.houseSeats,
+  }, 10000)
+  await db.query(`insert into public.live_snapshots (fetched_at, public, members) values ($1, $2, $3)`, [fetchedAt, JSON.stringify(pub), JSON.stringify(members)])
+}
+
 async function open() {
   const { PGlite } = await import('@electric-sql/pglite')
   const db = new PGlite(DB_NAME)
@@ -39,8 +60,17 @@ async function open() {
     await db.exec(AUTH_STUB)
     for (const m of MIGRATIONS) await db.exec(m)
     await db.exec(pollingSql)
+    // The migrations carry the real closing date, now past. The demo's fictional ballots are submitted against a future one.
+    const closes = new Date(Date.now() + 30 * 24 * 3600e3).toISOString()
+    const electionDay = new Date(Date.now() + (30 * 24 + 4) * 3600e3).toISOString()
+    await db.exec(`set session_replication_role = replica;
+      update public.markets set entry_deadline = '${closes}' where entry_deadline is not null;
+      update public.group_settings set default_deadline = '${closes}' where id;
+      set session_replication_role = origin;
+      create or replace function app.election_day_start() returns timestamptz language sql immutable as $$ select timestamptz '${electionDay}' $$;`)
     await db.exec(seedSql)
     if (SCENARIO === 'closed') await db.exec(`update public.markets set entry_deadline = now() - interval '1 hour' where featured`)
+    await seedLive(db)
   }
   return db
 }

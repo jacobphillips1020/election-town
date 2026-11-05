@@ -6,6 +6,7 @@ import { AuthPage } from './ui/Auth'
 import { JoinPage } from './ui/Join'
 import { Loading } from './ui/common'
 import { HomePage } from './ui/Home'
+import { ResultsPage } from './ui/Results'
 import { BallotPage } from './ui/Ballot'
 import { CardPage } from './ui/Card'
 import { SideBetsPage } from './ui/SideBets'
@@ -114,6 +115,7 @@ function Shell() {
           <Route path="/join/:token" element={<JoinPage />} />
           {DevBoard && <Route path="/dev/board" element={<Suspense fallback={null}><DevBoard /></Suspense>} />}
           <Route path="/" element={<HomePage />} />
+          <Route path="/results" element={<ResultsPage />} />
           <Route path="/ballot" element={<BallotPage />} />
           <Route path="/card" element={<CardPage />} />
           <Route path="/side" element={<SideBetsPage />} />
