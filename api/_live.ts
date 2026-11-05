@@ -58,7 +58,7 @@ export async function refreshLive(db: SupabaseClient, now = new Date()) {
   const { pub, members } = project(buildInputs(markets, es.map((e) => ({ ...e, display_name: names.get(e.user_id) ?? 'Someone' })), feed, fetchedAt))
   const { error } = await db.from('live_snapshots').insert({ fetched_at: fetchedAt, public: pub, members })
   if (error) throw new Error('Could not store the estimate')
-  return { people: pub.people, needle: pub.needle }
+  return { people: pub.people, bets: pub.bets.length }
 }
 
 export const MIN_GAP_MS = 20 * 60e3

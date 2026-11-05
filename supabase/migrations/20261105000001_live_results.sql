@@ -20,7 +20,7 @@ begin
     'live', s.public,
     'members', case when app.is_member() then s.members end,
     'previous', case when p.id is not null then jsonb_build_object('fetched_at', p.fetched_at, 'bets',
-      (select jsonb_agg(jsonb_build_object('id', b ->> 'id', 'pA', b -> 'pA')) from jsonb_array_elements(p.public -> 'bets') b)) end
+      (select jsonb_agg(jsonb_build_object('id', b ->> 'id', 'p50', b #> '{share,p50}')) from jsonb_array_elements(p.public -> 'bets') b)) end
   );
 end $$;
 revoke all on function public.get_live() from public;

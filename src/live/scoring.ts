@@ -48,3 +48,21 @@ export function payouts(entries: ScoreEntry[], outcome: RaceOutcome | SeatOutcom
   }
   return out
 }
+
+/**
+ * Who is closest, regardless of ballot size: each entry's share of the first layer, which everyone is in. Ties split.
+ * This is what "chance of winning the bet" means. Money can differ, since a smaller ballot only plays for the first layer.
+ * All zeros means the bet pays nobody and the money comes back.
+ */
+export function closestShares(entries: ScoreEntry[], outcome: RaceOutcome | SeatOutcome): number[] {
+  const seat = 'r' in outcome
+  const errors = entries.map((e) => {
+    if (seat) return e.r != null ? Math.abs(e.r - (outcome as SeatOutcome).r) : null
+    return e.winner === (outcome as RaceOutcome).winner ? Math.abs((e.shares?.[(outcome as RaceOutcome).winner] as number) - (outcome as RaceOutcome).share) : null
+  })
+  const seen = errors.filter((x): x is number => x != null)
+  if (entries.length < 2 || seen.length === 0) return entries.map(() => 0)
+  const best = Math.min(...seen)
+  const ties = seen.filter((x) => x === best).length
+  return errors.map((x) => (x === best ? 1 / ties : 0))
+}

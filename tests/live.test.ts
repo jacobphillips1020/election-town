@@ -6,9 +6,10 @@ import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
 import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
-import { drawRace, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
+import { density, drawRace, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket, type MemberBet, type PublicBet } from '../src/live/model'
 import { shortName } from '../src/live/names'
-import { payouts, type ScoreEntry } from '../src/live/scoring'
+import { closestShares, payouts, type ScoreEntry } from '../src/live/scoring'
+import { closestGuesses, zones } from '../src/live/zones'
 
 const fixed = counts as unknown as { counts: Record<string, Count>; mississippi: Count; senateSeats: SeatCount[]; houseSeats: SeatCount[] }
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -77,11 +78,11 @@ describe('get_live', () => {
     await db.exec(AUTH_STUB)
     for (const m of MIGRATIONS) await db.exec(m)
     expect(await rpc(db, null, 'get_live')).toBeNull()
-    await db.query(`insert into public.live_snapshots (fetched_at, public, members) values (now() - interval '6 hours', '{"bets":[{"id":"a","pA":0.4}]}', '{"bettors":[{"name":"First"}]}'), (now(), '{"bets":[{"id":"a","pA":0.7}]}', '{"bettors":[{"name":"Second"}]}')`)
-    const anon = await rpc<{ live: unknown; members: unknown; previous: { bets: { pA: number }[] } }>(db, null, 'get_live')
-    expect(anon.live).toEqual({ bets: [{ id: 'a', pA: 0.7 }] })
+    await db.query(`insert into public.live_snapshots (fetched_at, public, members) values (now() - interval '6 hours', '{"bets":[{"id":"a","share":{"p50":50.4}}]}', '{"bettors":[{"name":"First"}]}'), (now(), '{"bets":[{"id":"a","share":{"p50":51.2}}]}', '{"bettors":[{"name":"Second"}]}')`)
+    const anon = await rpc<{ live: unknown; members: unknown; previous: { bets: { p50: number }[] } }>(db, null, 'get_live')
+    expect(anon.live).toEqual({ bets: [{ id: 'a', share: { p50: 51.2 } }] })
     expect(anon.members).toBeNull()
-    expect(anon.previous.bets[0].pA).toBe(0.4)
+    expect(anon.previous.bets[0].p50).toBe(50.4)
     const member = uuid(77)
     await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'm@example.test', '{"display_name":"M"}')`, [member])
     await db.query(`insert into public.members (user_id) values ($1) on conflict do nothing`, [member])
@@ -121,9 +122,25 @@ describe('project', () => {
 
   test('pot shares, refunds and bets won all reconcile', () => {
     const pots = new Map(run.pub.bets.map((b) => [b.id, b.pot_cents]))
-    const total = run.members.bets.reduce((a, b) => a + b.refund, 0) + run.members.bettors.reduce((a, b) => a + b.bets, 0)
+    const total = run.members.bets.reduce((a, b) => a + b.moneyBack, 0) + run.members.bettors.reduce((a, b) => a + b.bets, 0)
     expect(total).toBeCloseTo(markets.length, 6)
     for (const b of run.members.bets) expect(pots.get(b.id)).toBeGreaterThan(0)
+  })
+
+  test('each bet\'s chances and the money-back chance add up to 100%', () => {
+    const all = project(inputs(7), 2000)
+    for (const b of all.members.bets) {
+      const m = markets.find((x) => x.id === b.id)!
+      const guesses = all.members.bets.find((x) => x.id === m.id)!
+      expect(guesses.rows.reduce((a, r) => a + r.p, 0) + guesses.refund).toBeLessThanOrEqual(1 + 1e-9)
+    }
+  })
+
+  test('a smaller ballot that is closest has a 100% chance, though it only collects the first layer', () => {
+    const e = (id: string, cents: number, c1: number): ScoreEntry => ({ id, cents, winner: 'c1', shares: { c1, c2: 1000 - c1 }, r: null })
+    const entries = [e('small', 200, 530), e('big1', 400, 510), e('big2', 400, 505)]
+    expect(closestShares(entries, { winner: 'c1', share: 531 })).toEqual([1, 0, 0])
+    expect(payouts(entries, { winner: 'c1', share: 531 }).map((p) => p.gross)).toEqual([600, 400, 0])
   })
 
   test('every error bar holds its estimate, and nobody can lose more than they paid', () => {
@@ -131,6 +148,21 @@ describe('project', () => {
       expect(b.lo).toBeLessThanOrEqual(b.net + 1)
       expect(b.hi).toBeGreaterThanOrEqual(b.net - 1)
       expect(b.lo).toBeGreaterThanOrEqual(-b.paid)
+    }
+  })
+
+  test('every fading bar comes from the draws and covers its 9-in-10 range', () => {
+    for (const b of run.members.bettors) {
+      expect(b.density.lo).toBeLessThanOrEqual(b.lo)
+      expect(b.density.hi).toBeGreaterThanOrEqual(b.hi)
+      expect(Math.max(...b.density.d)).toBe(1)
+    }
+    for (const b of run.pub.bets) {
+      expect(b.density).toBeDefined()
+      if (b.share) {
+        expect(b.density!.lo).toBeLessThanOrEqual(b.share.p5)
+        expect(b.density!.hi).toBeGreaterThanOrEqual(b.share.p95)
+      }
     }
   })
 
@@ -160,6 +192,87 @@ describe('project', () => {
     const out = project(inp, 500)
     expect(out.pub.bets.find((b) => b.id === 'm0')!.pA).toBe(0)
     expect(out.pub.bets.find((b) => b.id === 'm0')!.settled).toBe(true)
+  })
+})
+
+describe('zones: who owns each stretch of the range', () => {
+  const t = (x: number, side: string | null) => ({ name: 'x', x, side, rank: null })
+  test('midpoints divide guesses on the same side', () => {
+    const z = zones([t(52, 'c1'), t(54, 'c1')], { lo: 50, hi: 60, a: 'c1', b: 'c2' })
+    expect(z.map((x) => x.owner)).toEqual(['52|c1', '54|c1'])
+    expect(z[0].to).toBeCloseTo(53, 1)
+  })
+  test('past the tied line, if nobody picked that side, money comes back', () => {
+    const z = zones([t(50.5, 'c1'), t(52, 'c1')], { lo: 48, hi: 54, a: 'c1', b: 'c2' })
+    expect(z[0]).toMatchObject({ owner: null })
+    expect(z[0].to).toBeCloseTo(50, 1)
+    expect(z[1].owner).toBe('50.5|c1')
+  })
+  test('a guess on the losing side never owns the winning side', () => {
+    const z = zones([t(48, 'c2'), t(53, 'c1')], { lo: 45, hi: 60, a: 'c1', b: 'c2' })
+    expect(z.map((x) => x.owner)).toEqual(['48|c2', '53|c1'])
+    expect(z[0].to).toBeCloseTo(50, 1)
+  })
+  test('seat counts have no sides and agree with the payout rule at whole numbers', () => {
+    const guesses = [t(45, null), t(46, null)]
+    const z = zones(guesses, { lo: 43.5, hi: 47.5 })
+    expect(z.map((x) => x.owner)).toEqual(['45|', '46|'])
+    expect(z[0].to).toBeCloseTo(45.5, 1)
+  })
+  test('zones match who the real payout pays, across a range of finishes', () => {
+    const entries: ScoreEntry[] = [
+      { id: 'a', cents: 400, winner: 'c1', shares: { c1: 505, c2: 495 }, r: null },
+      { id: 'b', cents: 400, winner: 'c1', shares: { c1: 520, c2: 480 }, r: null },
+      { id: 'c', cents: 400, winner: 'c2', shares: { c1: 490, c2: 510 }, r: null },
+    ]
+    const ticks = entries.map((e) => t((e.shares as Record<string, number>).c1 / 10, e.winner))
+    const z = zones(ticks, { lo: 45, hi: 56, a: 'c1', b: 'c2' })
+    for (let v = 45.3; v < 56; v += 0.71) {
+      const zone = z.find((x) => v >= x.from && v < x.to)!
+      const pay = payouts(entries, toOutcome(v / 100, 'c1', 'c2'))
+      const paid = entries.filter((_, i) => pay[i].gross > 0).map((e) => `${(e.shares as Record<string, number>).c1 / 10}|${e.winner}`)
+      expect(paid).toEqual([zone.owner])
+    }
+  })
+})
+
+describe('closest guesses on decided bets', () => {
+  const bet = { share: { p5: 53, p10: 53, p50: 54, p90: 55, p95: 55 }, candidates: [{ id: 'c1', name: 'A', party: 'D' }, { id: 'c2', name: 'B', party: 'R' }] } as unknown as PublicBet
+  const t = (name: string, x: number, side: string) => ({ name, x, side, rank: null })
+  test('right side first, closest first, same guesses grouped, at most three', () => {
+    const m = { ticks: [t('Far', 50.5, 'c1'), t('Pat', 53, 'c1'), t('Sam', 53, 'c1'), t('Wrong', 49.9, 'c2'), t('Near', 55, 'c1'), t('Mid', 52, 'c1')] } as unknown as MemberBet
+    const top = closestGuesses(bet, m)
+    expect(top.map((g) => g.names)).toEqual([['Pat', 'Sam'], ['Near'], ['Mid']])
+    expect(top[0].miss).toBeCloseTo(1)
+  })
+  test('with too few right-side guesses, the wrong side fills in and is marked', () => {
+    const m = { ticks: [t('Right', 53, 'c1'), t('Wrong', 49, 'c2')] } as unknown as MemberBet
+    expect(closestGuesses(bet, m).map((g) => g.right)).toEqual([true, false])
+  })
+})
+
+describe('density', () => {
+  const sorted = (xs: number[]) => Float64Array.from(xs).sort()
+  test('darkest where outcomes pile up, faint in the tails', () => {
+    const r = rng(5)
+    const out = density(sorted(Array.from({ length: 20000 }, () => 50 + r.normal())))
+    const middle = out.d[Math.floor(out.d.length / 2)]
+    expect(middle).toBeGreaterThan(0.85)
+    expect(out.d[0]).toBeLessThan(0.1)
+    expect(out.d[out.d.length - 1]).toBeLessThan(0.1)
+  })
+  test('an either/or result shows two clusters, not a smooth hump', () => {
+    const out = density(sorted([...new Array(700).fill(-32), ...new Array(300).fill(40)]))
+    const midBin = out.d[Math.floor(out.d.length / 2)]
+    expect(midBin).toBe(0)
+    expect(out.d[0]).toBeGreaterThan(out.d[out.d.length - 1])
+  })
+  test('seat counts get one bin per number, in proportion', () => {
+    const out = density(sorted([...new Array(600).fill(44), ...new Array(300).fill(45), ...new Array(100).fill(46)]), { discrete: true })
+    expect(out).toEqual({ lo: 43.5, hi: 46.5, d: [1, 0.5, 0.167] })
+  })
+  test('a locked-in number is a single solid bin', () => {
+    expect(density(sorted(new Array(100).fill(-5))).d).toEqual([1])
   })
 })
 

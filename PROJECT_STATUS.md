@@ -63,7 +63,9 @@ Private GitHub repo `jacobphillips1020/election-town`; pushing to `main` deploys
 After polls close, this page estimates where the count ends up and what that means for the money.
 - **Votes:** [civicAPI](https://civicapi.org), free and public, county by county. 16 requests per run. Each run happens four times a day from `api/live-cron.ts` (Vercel Cron: 1, 7, 13, 19 UTC). A failed run stores nothing, so the last good estimate stays up. You can run it by opening `/api/live-cron` (at most once per 20 minutes).
 - **Method:** `src/live/model.ts` plays out 40,000 finishes. For each race it draws votes left and how they split (`src/live/config.ts` holds each state's assumptions), then scores every bet with `src/live/scoring.ts`. `tests/live.test.ts` holds that scoring to `app.compute_outcome` to the cent, and checks money nets to $0 and bets won + refunds = number of bets.
-- **"Called"** is only ever about a bettor's guess being over 99% to win the bet. News-desk calls are not used. Lean words never describe candidates.
+- **The picture:** each race shows the projected margin, how uncertain it is (a bar shaded by the simulated chance of landing there), and which guess owns each stretch of that range (`src/live/zones.ts`). The headline is the same picture on a dial. Decided bets show the three closest guesses against the final.
+- **"Called"** is only ever about a bettor's guess being over 99% to win the bet. News-desk calls are not used. Who wins a race isn't shown as a chance, and lean words never describe candidates.
+- **Chance vs. money:** chance of winning is about being closest, so it adds up to 100% with money back. Money and bets won use the full payout, where a $25 ballot only plays for the first half of a pot.
 - **Privacy:** vote counts and race estimates are public. Names beside picks and money are members-only (`get_live`). `live_snapshots` keeps every run. The repo holds only public vote counts (`src/demo/live-counts.json`, used by the demo and tests).
 - **New side bets** need a line in `SIDE_RACES` or they're left out, and the page says so.
 

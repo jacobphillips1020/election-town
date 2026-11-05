@@ -3,7 +3,7 @@
 // each person's money. Chances are shares of draws; error bars are percentiles of the same draws.
 import { DRAWS, MISSISSIPPI, NATIONAL_SHARE, RACES, leanLabel, seatProfile, type KeyRace, type LeanLabel, type StateProfile } from './config.js'
 import type { Count, SeatCount } from './feed.js'
-import { payouts, type RaceOutcome, type ScoreEntry, type SeatOutcome } from './scoring.js'
+import { closestShares, payouts, type RaceOutcome, type ScoreEntry, type SeatOutcome } from './scoring.js'
 
 // ---------------------------------------------------------------- random numbers (seeded: same inputs, same page)
 
@@ -134,6 +134,9 @@ export type LiveInputs = {
   unmodeled?: string[]
 }
 
+/** How likely each stretch of a range is: d[i] is the relative chance of bin i (the likeliest bin is 1), spread evenly from lo to hi. */
+export type Density = { lo: number; hi: number; d: number[] }
+
 export type PublicBet = {
   id: string; title: string; kind: string; sort_order: number; state?: string
   side: boolean; pot_cents: number
@@ -143,6 +146,8 @@ export type PublicBet = {
   /** Side A's two-way share: the count now, and where it ends up (percent). */
   now?: number
   share?: { p5: number; p10: number; p50: number; p90: number; p95: number }
+  /** The simulated final number: side A's share, or Republican seats. Drawn as the fading bar. */
+  density?: Density
   /** Chance side A wins the race. */
   pA?: number
   /** Seat bets: chance of each Republican total. */
@@ -156,8 +161,6 @@ export type PublicBet = {
 export type PublicLive = {
   version: 1; fetched_at: string; updated_at: string; draws: number
   bets: PublicBet[]
-  /** The bet whose candidates are closest to a coin flip (the needle), if any race is still unsettled. */
-  needle: string | null
   pot_cents: number; people: number
   unmodeled: string[]
 }
@@ -167,13 +170,15 @@ export type MemberBet = {
   rows: BoardRow[]
   /** Chance nobody wins and everyone gets their money back. */
   refund: number
+  /** Share of this bet's money that goes back to bettors on average. Differs from `refund` only with mixed ballot sizes. */
+  moneyBack: number
   lean: LeanLabel
   /** True when "nobody wins, money back" is more likely than any one guess. The label is then about that. */
   refundLeads: boolean
   /** Everyone's guess, in the same units as the strip. */
   ticks: { name: string; x: number; side: string | null; rank: number | null }[]
 }
-export type Bettor = { name: string; paid: number; net: number; lo: number; hi: number; bets: number; of: number; dollars: number }
+export type Bettor = { name: string; paid: number; net: number; lo: number; hi: number; bets: number; of: number; dollars: number; density: Density }
 export type MembersLive = { bets: MemberBet[]; bettors: Bettor[] }
 
 function quantile(sorted: ArrayLike<number>, q: number) {
@@ -182,6 +187,36 @@ function quantile(sorted: ArrayLike<number>, q: number) {
   const hi = Math.ceil(i)
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo)
 }
+
+/**
+ * The real shape of a simulated result, from sorted draws. Continuous values get a lightly smoothed histogram; `discrete`
+ * values (seat counts) get one bin per whole number. The extreme 0.4% of draws is trimmed so one freak draw can't stretch a bar.
+ */
+export function density(sorted: ArrayLike<number>, opts: { bins?: number; discrete?: boolean; soften?: number } = {}): Density {
+  const a = quantile(sorted, 0.002)
+  const b = quantile(sorted, 0.998)
+  const lo = opts.discrete ? Math.round(a) - 0.5 : a
+  const hi = opts.discrete ? Math.round(b) + 0.5 : b
+  const bins = opts.discrete ? Math.round(hi - lo) : opts.bins ?? 40
+  if (!(hi > lo)) return { lo, hi, d: [1] }
+  const raw = new Array<number>(bins).fill(0)
+  for (let i = 0; i < sorted.length; i++) {
+    const v = sorted[i]
+    if (v < lo || v > hi) continue
+    raw[Math.min(bins - 1, Math.floor(((v - lo) / (hi - lo)) * bins))] += 1
+  }
+  // Money comes in fixed payouts, so its draws land on a few exact amounts. `soften` blends neighbors so a bar reads as a
+  // range of outcomes instead of a row of spikes; separate clusters stay separate.
+  const reach = opts.soften ?? 1
+  const smooth = opts.discrete ? raw : raw.map((_, i) => {
+    let sum = 0
+    for (let j = -reach * 2; j <= reach * 2; j++) sum += (raw[i + j] ?? 0) * Math.exp(-(j * j) / (2 * reach * reach))
+    return sum
+  })
+  const top = Math.max(...smooth, 1)
+  return { lo, hi, d: smooth.map((v) => Math.round((v / top) * 1000) / 1000) }
+}
+
 const hashSeed = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0 }
 
 /** The winner's share in tenths of a percent, as settlement stores it. */
@@ -213,11 +248,12 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const byMarket = new Map(markets.map((m) => [m.id, entries.filter((e) => e.market === m.id)]))
 
   // Scoring results repeat a lot across draws, so each distinct outcome is scored once.
-  const scoreCache = new Map<string, { gross: number; refund: number }[]>()
+  type Scored = { pay: { gross: number; refund: number }[]; closest: number[] }
+  const scoreCache = new Map<string, Scored>()
   const scored = (m: LiveMarket, o: RaceOutcome | SeatOutcome) => {
     const key = m.id + ('r' in o ? `r${o.r}` : `${o.winner}${o.share}`)
     let v = scoreCache.get(key)
-    if (!v) { v = payouts(byMarket.get(m.id)!, o); scoreCache.set(key, v) }
+    if (!v) { const es = byMarket.get(m.id)!; v = { pay: payouts(es, o), closest: closestShares(es, o) }; scoreCache.set(key, v) }
     return v
   }
 
@@ -228,7 +264,8 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const net = people.map(() => new Int32Array(draws))
   const betsWon = new Float64Array(people.length)
   const gained = new Map(markets.map((m) => [m.id, new Float64Array(byMarket.get(m.id)!.length)]))
-  const refunds = new Map(markets.map((m) => [m.id, 0]))
+  const moneyBack = new Map(markets.map((m) => [m.id, 0]))
+  const nobody = new Map(markets.map((m) => [m.id, 0]))
   const potOf = new Map(markets.map((m) => [m.id, byMarket.get(m.id)!.reduce((a, e) => a + e.cents, 0)]))
   const paid = people.map((u) => entries.filter((e) => e.user === u).reduce((a, e) => a + e.cents, 0))
   const pAWins = new Map(races.map((m) => [m.id, 0]))
@@ -299,17 +336,18 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     for (let p = 0; p < people.length; p++) net[p][d] -= paid[p]
   }
 
-  function apply(m: LiveMarket, pay: { gross: number; refund: number }[], d: number) {
+  function apply(m: LiveMarket, { pay, closest }: Scored, d: number) {
     const es = byMarket.get(m.id)!
     const g = gained.get(m.id)!
     const pot = potOf.get(m.id)!
     for (let i = 0; i < es.length; i++) {
       const pi = personIndex.get(es[i].user)!
       net[pi][d] += pay[i].gross + pay[i].refund
-      g[i] += pay[i].gross
-      refunds.set(m.id, refunds.get(m.id)! + pay[i].refund)
+      g[i] += closest[i]
+      moneyBack.set(m.id, moneyBack.get(m.id)! + pay[i].refund)
       if (pot > 0) betsWon[pi] += pay[i].gross / pot
     }
+    if (closest.every((c) => c === 0)) nobody.set(m.id, nobody.get(m.id)! + 1)
   }
 
   // ------------------------------------------------------------ summaries
@@ -324,6 +362,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       pub.seatsLo = quantile(sorted, 0.05)
       pub.seatsMid = quantile(sorted, 0.5)
       pub.seatsHi = quantile(sorted, 0.95)
+      pub.density = density(sorted, { discrete: true })
       if (m.kind === 'senate_seats') {
         const open: { title: string; leader: string; p: number }[] = []
         for (const b of races.filter((x) => x.kind === 'senate')) {
@@ -346,6 +385,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     pub.left = { mid: Math.round(quantile(lf, 0.5)), lo: Math.round(quantile(lf, 0.1)), hi: Math.round(quantile(lf, 0.9)) }
     pub.now = (100 * c.a) / Math.max(c.a + c.b, 1)
     pub.share = { p5: 100 * quantile(sorted, 0.05), p10: 100 * quantile(sorted, 0.1), p50: 100 * quantile(sorted, 0.5), p90: 100 * quantile(sorted, 0.9), p95: 100 * quantile(sorted, 0.95) }
+    pub.density = density(Float64Array.from(sorted, (x) => x * 100))
     pub.pA = pAWins.get(m.id)! / draws
     pub.note = k.profile.note
     pub.done = k.profile.done
@@ -365,16 +405,16 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       const key = `${e.winner ?? ''}|${guess}`
       const row = groups.get(key) ?? { names: [], guess, side: e.winner, p: 0 }
       row.names.push(e.name)
-      row.p += pot ? g[i] / draws / pot : 0
+      row.p += g[i] / draws
       groups.set(key, row)
     })
     const rows = [...groups.values()].sort((x, y) => y.p - x.p || x.guess - y.guess)
     const top = rows.slice(0, 3)
     const rank = new Map(top.filter((row) => row.p >= 0.005).map((row, i) => [row, i + 1]))
-    const refund = pot ? refunds.get(m.id)! / draws / pot : 0
+    const refund = nobody.get(m.id)! / draws
     const ticks = rows.flatMap((row) => row.names.map((name) => ({ name, x: row.guess, side: row.side, rank: rank.get(row) ?? null })))
     const refundLeads = refund > (top[0]?.p ?? 0)
-    return { id: m.id, rows: top, refund, lean: leanLabel(Math.max(top[0]?.p ?? 0, refund)), refundLeads, ticks }
+    return { id: m.id, rows: top, refund, moneyBack: pot ? moneyBack.get(m.id)! / draws / pot : 0, lean: leanLabel(Math.max(top[0]?.p ?? 0, refund)), refundLeads, ticks }
   }
 
   // Projected money: dollars that sum to exactly zero across the table.
@@ -382,15 +422,13 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
   const dollars = roundToTotal(means)
   const bettors: Bettor[] = people.map((u, i) => {
     const sorted = Int32Array.from(net[i]).sort()
-    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i] }
+    return { name: nameOf.get(u)!, paid: paid[i], net: means[i], lo: quantile(sorted, 0.05), hi: quantile(sorted, 0.95), bets: betsWon[i] / draws, of: entries.filter((e) => e.user === u).length, dollars: dollars[i], density: density(sorted, { soften: 3 }) }
   }).sort((x, y) => y.net - x.net)
 
   const bets = markets.map(toPublic).sort((a, b) => a.sort_order - b.sort_order)
-  const coin = bets.filter((b) => b.pA != null && !b.settled && b.pA > 0.01 && b.pA < 0.99)
-    .sort((a, b) => Math.abs((a.pA as number) - 0.5) - Math.abs((b.pA as number) - 0.5))[0]
   const updated = Object.values(counts).map((c) => c.updated).sort().pop() ?? input.fetchedAt
   return {
-    pub: { version: 1, fetched_at: input.fetchedAt, updated_at: updated, draws, bets, needle: coin?.id ?? null, pot_cents: entries.reduce((a, e) => a + e.cents, 0), people: people.length, unmodeled: input.unmodeled ?? [] },
+    pub: { version: 1, fetched_at: input.fetchedAt, updated_at: updated, draws, bets, pot_cents: entries.reduce((a, e) => a + e.cents, 0), people: people.length, unmodeled: input.unmodeled ?? [] },
     members: { bets: markets.map(toMember), bettors },
   }
 }
