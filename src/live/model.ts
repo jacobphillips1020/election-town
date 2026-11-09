@@ -59,13 +59,28 @@ export function shareOfLeft(c: Count, left: number) {
 export type DrawnRace = { final: number; left: number; first: 'a' | 'b' | null }
 
 /** Side A's final two-way share in this draw. Ranked-choice states move eliminated ballots if nobody reached 50%. */
+/**
+ * Two-way votes left, from reporting when we have it: what was reported left, minus whatever the feed has counted since.
+ * Otherwise from the feed's own "% reporting" and county figures.
+ */
+export function leftNow(c: Count, k: KeyRace) {
+  const n = c.a + c.b
+  const rep = k.reported
+  if (!rep) return expectedLeft(c, k.profile)
+  const total = n + Object.values(c.others).reduce((a, b) => a + b, 0)
+  const ballots = Math.max(0, rep.left - Math.max(0, total - rep.countedAt))
+  return ballots * (total > 0 ? n / total : 1)
+}
+
 export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnRace {
   const p = k.profile
+  const rep = k.reported
   const n = c.a + c.b
-  const mean = expectedLeft(c, p)
-  const left = mean * Math.exp(p.spread * r.normal() - (p.spread * p.spread) / 2)
-  const base = shareOfLeft(c, mean)
-  const lean = p.lean + p.sd * (Math.sqrt(1 - NATIONAL_SHARE) * r.fat() + Math.sqrt(NATIONAL_SHARE) * national)
+  const mean = leftNow(c, k)
+  const spread = rep ? rep.spread : p.spread
+  const left = mean * Math.exp(spread * r.normal() - (spread * spread) / 2)
+  const base = rep?.shareA ?? (rep?.mix === 'state' ? (n ? c.a / n : 0.5) : shareOfLeft(c, mean))
+  const lean = (rep?.shareA != null ? 0 : p.lean) + p.sd * (Math.sqrt(1 - NATIONAL_SHARE) * r.fat() + Math.sqrt(NATIONAL_SHARE) * national)
   const inLeft = clamp(base + lean, 0, 1)
   // Official canvasses move totals a hair even when "everything" is in.
   const canvass = 0.0002 * r.normal()
@@ -164,6 +179,10 @@ export type PublicBet = {
   /** Senate seats: the races that can still change it. */
   open?: { title: string; leader: string; p: number }[]
   note?: string; done?: string
+  /** Where the votes-left estimate comes from, when it's reporting rather than the feed. */
+  reported?: { asOf: string; source: string; url: string }
+  /** Highest "% reporting" the feed has shown. It sometimes drops back; we never do. */
+  pctSeen?: number
   settled?: boolean
 }
 export type PublicLive = {
@@ -450,6 +469,8 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       const aMore = f.a >= f.b
       pub.firstRound = { p: (aMore ? f.a : f.b) / draws, name: m.candidates[aMore ? 0 : 1].name, from: aMore ? f.minA : f.minB }
     }
+    if (k.reported) pub.reported = { asOf: k.reported.asOf, source: k.reported.source, url: k.reported.url }
+    pub.pctSeen = c.pct
     pub.note = k.profile.note
     pub.done = k.profile.done
     return pub

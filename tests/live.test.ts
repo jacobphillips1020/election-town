@@ -6,7 +6,7 @@ import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
 import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, tierOf, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
-import { density, drawRace, fadeFromMiddle, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
+import { density, drawRace, fadeFromMiddle, leftNow, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
 import { shortName } from '../src/live/names'
 import { closestShares, payouts, type ScoreEntry } from '../src/live/scoring'
 import { zones } from '../src/live/zones'
@@ -378,7 +378,7 @@ describe('ranked choice', () => {
   const others = { 'Gerald L. Heikes': 3000, 'Daniel J. Jr. Sullivan': 2000 }
   const base: Count = { a: 48000, b: 47000, others, pct: 100, countyLeft: 0, countyShareA: 0.5, updated: '' }
   const k = KEY_RACES['Alaska Senate']
-  const still: KeyRace = { ...k, profile: { ...k.profile, floor: 0, sd: 0, lean: 0, spread: 0 } }
+  const still: KeyRace = { ...k, reported: undefined, profile: { ...k.profile, floor: 0, sd: 0, lean: 0, spread: 0 } }
   test('transfers move the two-way share when nobody reaches 50%', () => {
     const r = rng(1)
     const finals = Array.from({ length: 500 }, () => drawRace(base, still, r, 0).final)
@@ -409,6 +409,42 @@ describe('ranked choice', () => {
     const big: Count = { ...base, a: 52000, b: 43000 }
     const r = rng(1)
     expect(drawRace(big, still, r, 0).final).toBeCloseTo(52000 / 95000, 2)
+  })
+})
+
+describe('votes left from reporting', () => {
+  const base: Count = { a: 50000, b: 40000, others: { X: 10000 }, pct: 50, countedAt: 0, countyLeft: 0, countyShareA: 0.5, updated: '' } as unknown as Count
+  const k: KeyRace = { raceId: 0, state: 'XX', profile: { floor: 0, trust: 1, lean: 0, sd: 0.0001, spread: 0.0001, note: '' },
+    reported: { asOf: '2026-11-09', source: 'test', url: '', left: 20000, countedAt: 100000, spread: 0.0001, mix: 'state' } }
+  test('uses the reported figure, as two-way votes, not the feed\'s % reporting', () => {
+    expect(leftNow(base, k)).toBeCloseTo(20000 * 0.9, 0)
+  })
+  test('takes off whatever the feed has counted since the report', () => {
+    const later = { ...base, a: 55000, b: 44000, others: { X: 11000 } } // 10,000 more counted
+    expect(leftNow(later, k)).toBeCloseTo(10000 * 0.9, 0)
+    const done = { ...base, a: 62000, b: 50000, others: { X: 13000 } }
+    expect(leftNow(done, k)).toBe(0)
+  })
+  test('a reported split for what is left is used directly', () => {
+    const r = rng(3)
+    const withShare: KeyRace = { ...k, reported: { ...k.reported!, shareA: 0.6 } }
+    const d = drawRace(base, withShare, r, 0)
+    expect(d.final).toBeCloseTo((50000 + 18000 * 0.6) / (90000 + 18000), 3)
+  })
+})
+
+describe('the feed\'s % reporting never goes backwards', () => {
+  test('a drop is replaced by the highest figure seen', async () => {
+    const { buildInputs } = await import('../api/_live')
+    const race = (pct: number): FeedRace => ({ election_name: 'Georgia', percent_reporting: pct, last_updated: '', candidates: [{ name: 'Jon Ossoff', party: 'Democratic', votes: 10 }, { name: 'Mike Collins', party: 'Republican', votes: 8 }], region_results: {} })
+    const market = { id: 'g', title: 'Georgia Senate', kind: 'senate', sort_order: 2, featured: true, candidates: [{ id: 'c1', name: 'Jon Ossoff', party: 'D' }, { id: 'c2', name: 'Mike Collins', party: 'R' }] }
+    const agg: FeedRace = { election_name: 'x', percent_reporting: 0, last_updated: '', candidates: [], region_results: {} }
+    const feed: Record<number, FeedRace> = Object.fromEntries(Object.values(RACES).map((r) => [r.raceId, race(89.6)]))
+    feed[MISSISSIPPI.raceId] = { ...race(98), candidates: [{ name: 'Scott Colom', party: 'Democratic', votes: 5 }, { name: 'Cindy Hyde-Smith', party: 'Republican', votes: 4 }] }
+    Object.assign(feed, { 87528: agg, 87524: agg })
+    const entries = [{ id: 'e', user_id: 'u', display_name: 'Pat', market_id: 'g', commitment_cents: 400, winner_id: 'c1', shares: { c1: 550, c2: 450 }, seats: null }]
+    expect(buildInputs([market], entries, feed, '', { 'Georgia Senate': 99 }).counts.g.pct).toBe(99)
+    expect(buildInputs([market], entries, feed, '', { 'Georgia Senate': 80 }).counts.g.pct).toBe(89.6)
   })
 })
 

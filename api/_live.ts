@@ -9,7 +9,10 @@ type Row = Record<string, unknown>
 
 const isSeat = (m: LiveMarket) => m.kind === 'senate_seats' || m.kind === 'house_seats'
 
-export function buildInputs(allMarkets: LiveMarket[], allEntries: Row[], feed: Record<number, FeedRace>, fetchedAt: string): LiveInputs {
+/** The feed's "% reporting" sometimes drops back with no change in votes. Never let it go below the highest we've seen. */
+const floorPct = (c: Count, seen?: number) => (seen != null && seen > c.pct ? { ...c, pct: seen } : c)
+
+export function buildInputs(allMarkets: LiveMarket[], allEntries: Row[], feed: Record<number, FeedRace>, fetchedAt: string, pctSeen: Record<string, number> = {}): LiveInputs {
   const withMoney = allMarkets.filter((m) => allEntries.some((e) => e.market_id === m.id))
   // A main-ballot race without a source is a bug, so stop. A side bet without one is left out, and the page says so.
   const missing = withMoney.filter((m) => !isSeat(m) && !RACES[m.title])
@@ -20,7 +23,7 @@ export function buildInputs(allMarkets: LiveMarket[], allEntries: Row[], feed: R
   const counts: Record<string, Count> = {}
   for (const m of markets) {
     if (isSeat(m)) continue
-    counts[m.id] = toCount(feed[RACES[m.title].raceId], m.candidates[0].name, m.candidates[1].name)
+    counts[m.id] = floorPct(toCount(feed[RACES[m.title].raceId], m.candidates[0].name, m.candidates[1].name), pctSeen[m.title])
   }
   const entries: LiveEntry[] = rawEntries.map((e) => ({
     id: e.id as string, user: e.user_id as string, name: shortName(e.display_name as string), market: e.market_id as string,
@@ -55,7 +58,13 @@ export async function refreshLive(db: SupabaseClient, now = new Date()) {
   if (pe || !ps) throw new Error('Could not read names')
   const names = new Map(ps.map((p) => [p.user_id, p.display_name]))
   const fetchedAt = now.toISOString()
-  const { pub, members } = project(buildInputs(markets, es.map((e) => ({ ...e, display_name: names.get(e.user_id) ?? 'Someone' })), feed, fetchedAt))
+  const { data: last } = await db.from('live_snapshots').select('public').order('fetched_at', { ascending: false }).limit(1)
+  const pctSeen: Record<string, number> = {}
+  for (const b of ((last?.[0]?.public as { bets?: { title: string; pct?: number; pctSeen?: number }[] } | undefined)?.bets ?? [])) {
+    const seen = Math.max(b.pctSeen ?? 0, b.pct ?? 0)
+    if (seen > 0) pctSeen[b.title] = seen
+  }
+  const { pub, members } = project(buildInputs(markets, es.map((e) => ({ ...e, display_name: names.get(e.user_id) ?? 'Someone' })), feed, fetchedAt, pctSeen))
   const { error } = await db.from('live_snapshots').insert({ fetched_at: fetchedAt, public: pub, members })
   if (error) throw new Error('Could not store the estimate')
   return { people: pub.people, bets: pub.bets.length }

@@ -347,7 +347,12 @@ function BetBody({ bet, m, me, before }: BetProps) {
           )}
         </ol>
       )}
-      {bet.note && <p className="small muted lv-bet-note">{bet.note} {bet.done}</p>}
+      {bet.note && (
+        <p className="small muted lv-bet-note">
+          {bet.note} {bet.done}
+          {bet.reported && <> Votes left: <a href={bet.reported.url} target="_blank" rel="noreferrer">{bet.reported.source}</a>, {new Date(`${bet.reported.asOf}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, less anything counted since.</>}
+        </p>
+      )}
     </>
   )
 }

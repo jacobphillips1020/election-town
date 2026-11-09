@@ -15,64 +15,102 @@ export type StateProfile = {
   done?: string
 }
 
+/**
+ * What reporting says is left, when it's better than the feed's "% reporting". Dated and credited on the page.
+ * As new votes show up in the feed, they're taken off `left` automatically, so the estimate doesn't go stale on its own.
+ */
+export type Reported = {
+  asOf: string; source: string; url: string
+  /** Ballots still to count (all candidates), and the feed's total votes when that was reported. */
+  left: number; countedAt: number
+  /** Uncertainty in `left` on a log scale (0.3 is roughly ±30%). */
+  spread: number
+  /** How the rest should split: like the counties still out ('county'), or like the state so far ('state'), plus the profile's lean. */
+  mix: 'county' | 'state'
+  /** Side A's two-way share of what's left, when reporting gives a direct read (Alaska's early and absentee ballots). Replaces mix and lean. */
+  shareA?: number
+}
+
 export type Transfer = { name: string; toA: [mean: number, sd: number]; toB: [mean: number, sd: number] }
 
 export type KeyRace = {
-  raceId: number; state: string; profile: StateProfile; transfers?: Transfer[]
+  raceId: number; state: string; profile: StateProfile; transfers?: Transfer[]; reported?: Reported
   /** House races only: its row in the national breakdown, so the seat isn't counted twice. */
   seatKey?: string
 }
 
+// Votes left come from reporting (AP's expected vote, published by NBC, and state officials), dated in each `reported`.
+// The feed's own "% reporting" jumps around, so it's only a fallback. Refresh these figures when reporting moves.
 export const KEY_RACES: Record<string, KeyRace> = {
   'Alaska Senate': {
     raceId: 86916, state: 'AK',
-    // 2024 House race: Peltola's margin improved 8.5 points across the late vote; about 6 of that is where the vote is, already
-    // in the county math, and the rest is the extra lean. Same race: John Howe's voters went 37% Begich, 21% Peltola, 42% no second choice.
     profile: {
-      floor: 0.01, trust: 1, lean: 0.01, sd: 0.03, spread: 0.25,
-      note: 'About a quarter of the vote is out: absentees, early votes and rural precincts, which usually help Democrats. If nobody hits 50%, ballots from the last-place candidates move to their next choice, and those voters lean Sullivan.',
-      done: 'Absentees can arrive through Nov. 13, overseas through Nov. 18. Ranked-choice count Nov. 18.',
+      floor: 0.01, trust: 1, lean: 0, sd: 0.035, spread: 0.15,
+      note: 'Nothing new has been counted since election night. Still out: roughly 51,000 early and absentee ballots in hand, plus late mail and questioned ballots. The early and absentee ballots counted so far went about 58% Peltola head to head. If nobody reaches 50%, second choices count, and the state’s ballot data shows the other Dan Sullivan’s voters leaning Peltola while Heikes voters lean Sullivan.',
+      done: 'Absentee counts expected Nov. 10 and 13. Ranked-choice count Nov. 18.',
     },
+    // Ballots left: Newsweek counts about 51,000 early and absentee ballots in hand plus up to 10,528 more mail; AP expects about
+    // 75,000. The middle of those, about 63,000, with room for either. Counted so far in the feed: 214,246.
+    reported: {
+      asOf: '2026-11-09', source: 'Newsweek and AP', url: 'https://www.yahoo.com/news/politics/articles/ranked-choice-twist-other-dan-234138123.html',
+      left: 63000, countedAt: 214246, spread: 0.15, mix: 'state',
+      // Early and absentee ballots counted so far: about 56.5% of first choices, 58% after ranked choice, so about 58% head to
+      // head. Late mail can run differently: a fat-tailed 3.5-point uncertainty. Cross-check, Nov. 9: Polymarket's first-round
+      // margin market centers on Peltola +3 to +6, which implies about 58-60%.
+      shareA: 0.58,
+    },
+    // From the state's cast-vote records (204,530 scanned ballots), as tallied by Newsweek on Nov. 8. The other Dan Sullivan's
+    // voters: 29% Peltola, 16% Sullivan, 18% Heikes (whose voters then split like his own), 37% no one. Heikes's: 17.5% Peltola,
+    // 43% Sullivan, 39% no one. Folded together here.
     transfers: [
-      { name: 'Gerald L. Heikes', toA: [0.12, 0.05], toB: [0.6, 0.12] },
-      { name: 'Daniel J. Jr. Sullivan', toA: [0.2, 0.08], toB: [0.45, 0.15] },
+      { name: 'Gerald L. Heikes', toA: [0.175, 0.03], toB: [0.433, 0.04] },
+      { name: 'Daniel J. Jr. Sullivan', toA: [0.32, 0.04], toB: [0.24, 0.04] },
     ],
   },
   'Georgia Senate': {
     raceId: 87087, state: 'GA',
     profile: { floor: 0.004, trust: 0.05, lean: 0.02, sd: 0.06, spread: 0.5, note: 'Nearly every county is in. Left: provisional and overseas ballots, plus a feed figure (89%) that doesn’t match its own county counts, so we allow for more than we expect.', done: 'Provisional and overseas ballots through Nov. 6.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/georgia-senate-results', left: 6500, countedAt: 4181853, spread: 0.3, mix: 'state' },
   },
   'Iowa Senate': {
     raceId: 87151, state: 'IA',
     profile: { floor: 0.003, trust: 0.25, lean: 0, sd: 0.05, spread: 0.5, note: 'Mail ballots had to arrive by Election Day, so only provisional ballots and a little reporting lag are left.', done: 'County canvass the week after the election.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/iowa-senate-results', left: 13889, countedAt: 1360839, spread: 0.3, mix: 'state' },
   },
   'Maine Senate': {
     raceId: 87188, state: 'ME',
-    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.03, spread: 0.3, note: 'Towns report on their own schedule, so about 9% is out, spread across most counties. If nobody reaches 50%, it goes to a ranked-choice count.', done: 'Towns usually finish within days.' },
+    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.03, spread: 0.3, note: 'About 20,000 votes are still out, mostly from small towns in Washington, Franklin, Aroostook and Somerset counties, which lean Collins.', done: 'Towns usually finish within days.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/maine-senate-results', left: 20315, countedAt: 709755, spread: 0.3, mix: 'county' },
   },
   'Michigan Senate': {
     raceId: 87214, state: 'MI',
     profile: { floor: 0.002, trust: 0.5, lean: 0.01, sd: 0.03, spread: 0.4, note: 'Wayne and Genesee counties are still finishing. Overseas ballots can arrive for six more days.', done: 'County canvass within two weeks.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/michigan-senate-results', left: 105319, countedAt: 4778672, spread: 0.3, mix: 'county' },
   },
   'Nebraska Senate': {
     raceId: 87254, state: 'NE',
     profile: { floor: 0.003, trust: 1, lean: 0, sd: 0.05, spread: 0.5, note: 'Every county has reported. Only provisional ballots are left.', done: 'County canvass the week after the election.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/nebraska-senate-results', left: 23063, countedAt: 754367, spread: 0.3, mix: 'state' },
   },
   'New Hampshire Senate': {
     raceId: 87283, state: 'NH',
     profile: { floor: 0.001, trust: 0.4, lean: 0, sd: 0.03, spread: 0.4, note: 'Hand-count towns are still trickling in, mostly in Cheshire and Coos counties. New Hampshire has same-day registration, so few provisional ballots.', done: 'Towns usually finish within days.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/new-hampshire-senate-results', left: 5765, countedAt: 637324, spread: 0.3, mix: 'county' },
   },
   'North Carolina Senate': {
     raceId: 87346, state: 'NC',
     profile: { floor: 0.008, trust: 1, lean: 0.01, sd: 0.05, spread: 0.4, note: 'All counties have reported. Left: provisional ballots and overseas mail, reviewed before the county canvass.', done: 'County canvass Nov. 13.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/north-carolina-senate-results', left: 38000, countedAt: 4203168, spread: 0.3, mix: 'state' },
   },
   'Ohio Senate (special)': {
     raceId: 87527, state: 'OH',
-    profile: { floor: 0.025, trust: 0.25, lean: 0.04, sd: 0.05, spread: 0.4, note: 'Ohio has a lot of provisional ballots, and late-counted ballots there usually lean Democratic. They aren’t added until the official canvass.', done: 'Official canvass Nov. 14–24.' },
+    profile: { floor: 0.025, trust: 0.25, lean: 0.05, sd: 0.05, spread: 0.4, note: 'About 107,000 votes are still out, mostly provisional ballots, which are cast more in cities and usually lean Democratic. Nothing new gets added until the official canvass.', done: 'Official canvass must finish by Nov. 24.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-special-elections/ohio-senate-results', left: 106646, countedAt: 4601925, spread: 0.25, mix: 'state' },
   },
   'Texas Senate': {
     raceId: 87438, state: 'TX',
     profile: { floor: 0.003, trust: 0.7, lean: 0, sd: 0.04, spread: 0.5, note: 'Big counties show 99% but rounding hides what’s left. Late mail and overseas ballots have a few more days.', done: 'County canvass within two weeks.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/texas-senate-results', left: 42457, countedAt: 9897599, spread: 0.3, mix: 'state' },
   },
 }
 
@@ -80,11 +118,13 @@ export const KEY_RACES: Record<string, KeyRace> = {
 export const SIDE_RACES: Record<string, KeyRace> = {
   'Kansas Senate': {
     raceId: 87162, state: 'KS',
-    profile: { floor: 0.012, trust: 1, lean: 0.01, sd: 0.05, spread: 0.5, note: 'All counties have reported. Kansas now requires mail ballots by Election Day, so what’s left is provisional ballots, which counties review before their canvass.', done: 'County canvasses Nov. 9–16.' },
+    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'About 1% of the vote is still out, mostly provisional ballots that counties add at their canvasses. Provisional ballots are cast more in cities and lean a little Democratic.', done: 'County canvasses finish by Nov. 16.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results', left: 13000, countedAt: 1099896, spread: 0.4, mix: 'state' },
   },
   'New York governor': {
     raceId: 87329, state: 'NY',
     profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'New York counts early and Election Day votes first. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/new-york-governor-results', left: 500102, countedAt: 6041435, spread: 0.3, mix: 'county' },
   },
   'NY-17 House': {
     raceId: 87319, state: 'NY', seatKey: 'ny-17',
@@ -100,7 +140,13 @@ export const MISSISSIPPI: KeyRace = {
   raceId: 81004, state: 'MS',
   // The campaigns say thousands remain: Democratic Hinds County and the Republican Coast, plus affidavit ballots and mail
   // arriving up to five business days late. Mississippi has no recount law, so a court fight could change what counts.
-  profile: { floor: 0.015, trust: 0.5, lean: 0.03, sd: 0.07, spread: 0.5, note: 'Mail ballots can arrive through Nov. 10, and affidavit ballots still have to be reviewed.' },
+  profile: { floor: 0.015, trust: 0.5, lean: 0, sd: 0.06, spread: 0.5, note: 'About 26,000 votes are still out: roughly 7% of Democratic Hinds County (due Wednesday), the slower Republican-leaning Coast counties, and affidavit ballots statewide.' },
+  // AP expects about 26,000 more; the Secretary of State says 75 of 82 counties are in and about 2,700 mail ballots are out.
+  // Mississippi Today, Nov. 9: Hinds County still had about 7% of its vote out.
+  reported: { asOf: '2026-11-09', source: 'AP via NBC and the Mississippi Secretary of State', url: 'https://www.wlbt.com/2026/11/09/colom-leads-hyde-smith-by-more-than-2500-votes-mississippi-awaits-final-senate-result/', left: 25851, countedAt: 953463, spread: 0.35, mix: 'county',
+    // Where it is: about 7% of Hinds County (Jackson, strongly Colom), due Wednesday; the slower Coast counties (Hyde-Smith);
+    // and affidavit ballots around the state, which lean Democratic. Blended, a little better than even for Colom.
+    shareA: 0.53 },
 }
 
 export const SENATE_AGGREGATE_ID = 87528

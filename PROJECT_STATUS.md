@@ -70,6 +70,8 @@ After polls close, this page estimates where the count ends up and what that mea
 - **Shading:** money bars use `fadeFromMiddle`: darkness is the share of finishes at least that far from the middle, so it fades continuously even though money lands on fixed amounts. Race bars use `density`, the actual shape, so Alaska's first-round gap shows.
 - **Chance vs. money:** chance of winning is about being closest, so it adds up to 100% with money back. Money and bets won use the full payout, where a $25 ballot only plays for the first half of a pot.
 - **Privacy:** vote counts and race estimates are public. Names beside picks and money are members-only (`get_live`). `live_snapshots` keeps every run. The repo holds only public vote counts (`src/demo/live-counts.json`, used by the demo and tests).
+- **Votes left** come from reporting, not the feed's "% reporting", which jumps around: AP's expected vote (published by NBC), state officials, and for Alaska Newsweek's tally of the state's ballot reports. Each race's `reported` in `src/live/config.ts` is dated, credited on the page, and shrinks automatically as the feed counts more. The feed's % reporting is also never allowed to go backwards. Refresh the `reported` figures when reporting moves (last: Nov. 9).
+- **Alaska's second choices** use the state's cast-vote records (Newsweek, Nov. 8). Cross-checked against Polymarket on Nov. 9.
 - **New side bets** need a line in `SIDE_RACES` or they're left out, and the page says so.
 
 ## Code map
