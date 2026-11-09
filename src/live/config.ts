@@ -79,8 +79,11 @@ export const KEY_RACES: Record<string, KeyRace> = {
   },
   'Maine Senate': {
     raceId: 87188, state: 'ME',
-    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.03, spread: 0.3, note: 'About 20,000 votes are still out, mostly from small towns in Washington, Franklin, Aroostook and Somerset counties, which lean Collins.', done: 'Towns usually finish within days.' },
-    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/maine-senate-results', left: 20315, countedAt: 709755, spread: 0.3, mix: 'county' },
+    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.03, spread: 0.3, note: 'About 20,000 votes are still out, from towns that so far split about 45–55 against Jackson: Sanford, Bangor, Augusta and Lewiston, plus many small towns up north. The 34,000 votes added since Nov. 5 went 44% Jackson.', done: 'Towns usually finish within days.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/maine-senate-results', left: 20315, countedAt: 709755, spread: 0.3, mix: 'county',
+      // How what's left should split, two ways that agree: the feed's partly reported towns (Sanford, Bangor, Augusta, Lewiston
+      // and many small towns) add up to 45.5% Jackson, and the 34,000 votes added since Nov. 5 went 44% Jackson.
+      shareA: 0.455 },
   },
   'Michigan Senate': {
     raceId: 87214, state: 'MI',
@@ -118,8 +121,11 @@ export const KEY_RACES: Record<string, KeyRace> = {
 export const SIDE_RACES: Record<string, KeyRace> = {
   'Kansas Senate': {
     raceId: 87162, state: 'KS',
-    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'About 1% of the vote is still out, mostly provisional ballots that counties add at their canvasses. Provisional ballots are cast more in cities and lean a little Democratic.', done: 'County canvasses finish by Nov. 16.' },
-    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results', left: 13000, countedAt: 1099896, spread: 0.4, mix: 'state' },
+    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'About 13,000 votes are still out, mostly provisional ballots that counties add at their canvasses. The few added since election night ran well ahead of Hamilton’s statewide share.', done: 'Sedgwick County canvasses Nov. 12, Johnson County Nov. 13, all certified by Nov. 16.' },
+    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results', left: 13000, countedAt: 1099896, spread: 0.4, mix: 'state',
+      // What's left is mostly provisional ballots from the big counties' canvasses. The ~1,900 votes added since Nov. 5 went
+      // 55-77% Hamilton; that's a small sample, so a more cautious 58%.
+      shareA: 0.58 },
   },
   'New York governor': {
     raceId: 87329, state: 'NY',
