@@ -180,7 +180,7 @@ function YouLine({ me, bettors, open, memberOf }: { me: string; bettors: Bettor[
 function WhatsNext({ titles }: { titles: Set<string> }) {
   const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d)
   const today = day(new Date())
-  const items = WHATS_NEXT.filter((e) => e.date >= today && titles.has(e.bet)).slice(0, 5)
+  const items = WHATS_NEXT.filter((e) => e.date >= today && titles.has(e.bet)).slice(0, 6)
   if (!items.length) return null
   const label = (iso: string) => (iso === today ? 'Today' : new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }))
   return (
