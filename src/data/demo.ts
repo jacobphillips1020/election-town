@@ -18,7 +18,7 @@ function scenario(): 'open' | 'closed' {
   }
 }
 const SCENARIO = scenario()
-const DB_NAME = `idb://election-town-demo-v25${SCENARIO === 'closed' ? '-closed' : ''}`
+const DB_NAME = `idb://election-town-demo-v26${SCENARIO === 'closed' ? '-closed' : ''}`
 const ACTOR_KEY = 'et-demo-actor'
 
 export const PERSONAS: Persona[] = [

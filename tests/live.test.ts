@@ -6,7 +6,7 @@ import { rpc } from '../src/data/pgliteRpc'
 import counts from '../src/demo/live-counts.json'
 import { KEY_RACES, MISSISSIPPI, RACES, leanLabel, tierOf, type KeyRace } from '../src/live/config'
 import { toCount, toSeats, type Count, type FeedRace, type SeatCount } from '../src/live/feed'
-import { density, drawRace, fadeFromMiddle, leftNow, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
+import { density, drawRace, fadeFromMiddle, leftNow, remainingShare, seenSince, project, rng, roundToTotal, toOutcome, type LiveEntry, type LiveMarket } from '../src/live/model'
 import { shortName } from '../src/live/names'
 import { closestShares, payouts, type ScoreEntry } from '../src/live/scoring'
 import { zones } from '../src/live/zones'
@@ -222,6 +222,14 @@ describe('project', () => {
     }
   })
 
+  test('an update with no new votes gives exactly the same page, whatever the feed\'s timestamps say', () => {
+    const a = inputs()
+    const b = inputs()
+    b.counts = Object.fromEntries(Object.entries(b.counts).map(([id, c]) => [id, { ...c, updated: 'later' }]))
+    b.mississippi = { ...b.mississippi, updated: 'later' }
+    expect(project(b, 1500).members).toEqual(project(a, 1500).members)
+  })
+
   test('same counts give the same page', () => {
     expect(project(inputs(), 2000).members).toEqual(project(inputs(), 2000).members)
   })
@@ -422,8 +430,9 @@ describe('votes left from reporting', () => {
   test('takes off whatever the feed has counted since the report', () => {
     const later = { ...base, a: 55000, b: 44000, others: { X: 11000 } } // 10,000 more counted
     expect(leftNow(later, k)).toBeCloseTo(10000 * 0.9, 0)
+    // Counted past the whole reported pool: a tenth of it stays in doubt until the official result is entered.
     const done = { ...base, a: 62000, b: 50000, others: { X: 13000 } }
-    expect(leftNow(done, k)).toBe(0)
+    expect(leftNow(done, k)).toBeCloseTo(2000 * (112000 / 125000), 0)
   })
   test('a reported split for what is left is used directly', () => {
     const r = rng(3)
@@ -445,6 +454,43 @@ describe('the feed\'s % reporting never goes backwards', () => {
     const entries = [{ id: 'e', user_id: 'u', display_name: 'Pat', market_id: 'g', commitment_cents: 400, winner_id: 'c1', shares: { c1: 550, c2: 450 }, seats: null }]
     expect(buildInputs([market], entries, feed, '', { 'Georgia Senate': 99 }).counts.g.pct).toBe(99)
     expect(buildInputs([market], entries, feed, '', { 'Georgia Senate': 80 }).counts.g.pct).toBe(89.6)
+  })
+})
+
+describe('learning the split from the count', () => {
+  const count = (a: number, b: number): Count => ({ a, b, others: {}, pct: 90, countyLeft: 0, countyShareA: 0.5, updated: '' })
+  const k: KeyRace = { raceId: 0, state: 'XX', profile: { floor: 0, trust: 1, lean: 0, sd: 0.04, spread: 0.2, note: '' },
+    reported: { asOf: '2026-11-11', source: 'test', url: '', left: 40000, countedAt: 200000, spread: 0.2, mix: 'state', shareA: 0.58, at: { a: 101000, b: 99000 } } }
+  test('no new votes: the prior, unchanged', () => {
+    expect(seenSince(count(101000, 99000), k)).toBeNull()
+    expect(remainingShare(count(101000, 99000), k)).toEqual({ mean: 0.58, sd: 0.04 })
+  })
+  test('a handful of votes is not a batch', () => {
+    expect(seenSince(count(101100, 99050), k)).toBeNull()
+  })
+  test('a big batch pulls the estimate toward what was counted and tightens it', () => {
+    const c = count(101000 + 10600, 99000 + 9400) // 20,000 new votes at 53%
+    expect(seenSince(c, k)).toEqual({ n: 20000, share: 0.53 })
+    const got = remainingShare(c, k)
+    expect(got.mean).toBeGreaterThan(0.53)
+    expect(got.mean).toBeLessThan(0.555) // closer to the count than to the prior
+    expect(got.sd).toBeLessThan(0.03)
+  })
+  test('a small batch moves it much less than a big one at the same split', () => {
+    const small = remainingShare(count(101000 + 530, 99000 + 470), k) // 1,000 at 53%
+    const big = remainingShare(count(101000 + 10600, 99000 + 9400), k)
+    expect(small.mean).toBeGreaterThan(big.mean)
+    expect(0.58 - small.mean).toBeLessThan((0.58 - big.mean) / 2)
+  })
+  test('the worked example in the notes: Alaska, had the model been learning on Nov. 9', () => {
+    // Prior 58% +/- 3.5. Then 27,814 votes at 56.6%, out of a pool of about 60,000.
+    const ak: KeyRace = { ...k, profile: { ...k.profile, sd: 0.035 }, reported: { ...k.reported!, left: 60000, at: { a: 103171, b: 102617 } } }
+    const got = remainingShare(count(103171 + 15755, 102617 + 12059), ak)
+    expect(got.mean).toBeCloseTo(0.572, 2)
+    expect(got.sd).toBeCloseTo(0.024, 2)
+  })
+  test('a feed correction that takes votes away is ignored, not treated as evidence', () => {
+    expect(seenSince(count(100000, 99000), k)).toBeNull()
   })
 })
 

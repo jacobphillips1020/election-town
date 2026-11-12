@@ -22,6 +22,9 @@ const roughly = (n: number) => (n >= 10000 ? Math.round(n / 1000) * 1000 : Math.
 const etTime = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(d).replace(':00', '').replace(' AM', ' a.m.').replace(' PM', ' p.m.')
 const etStamp = (d: Date) => `${new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(d)}, ${etTime(d)} ET`
 
+const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const daysOld = (iso: string) => Math.floor((Date.now() - new Date(`${iso}T12:00:00Z`).getTime()) / 86400e3)
+
 /** Side A's two-way share -> "Peltola +0.8". A ballot's 52.0–48.0 is a +4.0 margin. */
 function marginText(bet: PublicBet, shareA: number) {
   const m = 2 * shareA - 100
@@ -126,7 +129,7 @@ function Results({ data }: { data: Payload }) {
         <summary>How this is worked out</summary>
         <ol>
           <li>Votes come from <a href="https://civicapi.org" target="_blank" rel="noreferrer">civicAPI</a>, by county, about once an hour.</li>
-          <li>For each race: how many votes are left (what the feed reports, plus late ballots it can’t see) and how they’ll split (each county’s split so far, plus how that state’s late vote usually runs). We’re unsure of both, and that uncertainty is what the shading shows.</li>
+          <li>For each race: how many votes are left (from AP’s estimate or state officials, credited on each card, less anything counted since) and how they’ll split. The split starts from the best read available and then updates on how newly counted votes actually go. We’re unsure of both, and that uncertainty is what the shading shows.</li>
           <li>Alaska adds the ranked-choice step: if nobody reaches 50%, the last-place candidates’ ballots move to their next choice, or drop out if there isn’t one.</li>
           <li>The computer plays out {live.draws.toLocaleString('en-US')} possible finishes. Each one scores every bet the way the real payout does: right winner, closest vote share to a tenth of a point, ties split.</li>
           <li>Chances, projected money and bets won all count those same finishes, so they always add up. Projected money sums to $0. A split counts as a share of a bet won.</li>
@@ -350,7 +353,9 @@ function BetBody({ bet, m, me, before }: BetProps) {
       {bet.note && (
         <p className="small muted lv-bet-note">
           {bet.note} {bet.done}
-          {bet.reported && <> Votes left: <a href={bet.reported.url} target="_blank" rel="noreferrer">{bet.reported.source}</a>, {new Date(`${bet.reported.asOf}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, less anything counted since.</>}
+          {bet.reported && <> Votes left: <a href={bet.reported.url} target="_blank" rel="noreferrer">{bet.reported.source}</a>, {shortDate(bet.reported.asOf)}{daysOld(bet.reported.asOf) >= 3 ? ` (${daysOld(bet.reported.asOf)} days old)` : ''}, less anything counted since.</>}
+          {bet.since && bet.share && <> Counted since then: {roughly(bet.since.n)} votes, {(bet.since.share >= 50 ? bet.since.share : 100 - bet.since.share).toFixed(1)}% {lastName(bet.candidates[bet.since.share >= 50 ? 0 : 1].name)}.</>}
+          {bet.rest && bet.share && <> The rest is figured at {(bet.rest.mean >= 50 ? bet.rest.mean : 100 - bet.rest.mean).toFixed(0)}% {lastName(bet.candidates[bet.rest.mean >= 50 ? 0 : 1].name)}, give or take {Math.round(bet.rest.sd)}.</>}
         </p>
       )}
     </>

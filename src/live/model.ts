@@ -1,7 +1,7 @@
 // The projection. One set of simulated finishes drives every number on the Results page, so they can't disagree:
 // each draw picks a final count for every race, scores all 12 bets with the pool's real payout rule, and adds up
 // each person's money. Chances are shares of draws; error bars are percentiles of the same draws.
-import { DRAWS, MISSISSIPPI, NATIONAL_SHARE, RACES, leanLabel, seatProfile, type KeyRace, type LeanLabel, type StateProfile } from './config.js'
+import { DRAWS, LATE_TAU, MISSISSIPPI, NATIONAL_SHARE, RACES, RESIDUAL, SMALL_BATCH, leanLabel, seatProfile, type KeyRace, type LeanLabel, type StateProfile } from './config.js'
 import type { Count, SeatCount } from './feed.js'
 import { closestShares, payouts, type RaceOutcome, type ScoreEntry, type SeatOutcome } from './scoring.js'
 
@@ -61,15 +61,48 @@ export type DrawnRace = { final: number; left: number; first: 'a' | 'b' | null }
 /** Side A's final two-way share in this draw. Ranked-choice states move eliminated ballots if nobody reached 50%. */
 /**
  * Two-way votes left, from reporting when we have it: what was reported left, minus whatever the feed has counted since.
- * Otherwise from the feed's own "% reporting" and county figures.
+ * A reported pool never runs all the way out on its own: estimates of what's left are often low, so a share of it stays
+ * in doubt until the official result is entered. Without reporting, the feed's own "% reporting" and county figures.
  */
 export function leftNow(c: Count, k: KeyRace) {
   const n = c.a + c.b
   const rep = k.reported
   if (!rep) return expectedLeft(c, k.profile)
   const total = n + Object.values(c.others).reduce((a, b) => a + b, 0)
-  const ballots = Math.max(0, rep.left - Math.max(0, total - rep.countedAt))
+  const ballots = Math.max(rep.left - Math.max(0, total - rep.countedAt), RESIDUAL * rep.left)
   return ballots * (total > 0 ? n / total : 1)
+}
+
+export type Seen = { n: number; share: number }
+
+/** Votes for the two candidates counted since the report, and side A's share of them. Null until a real batch has landed. */
+export function seenSince(c: Count, k: KeyRace): Seen | null {
+  const at = k.reported?.at
+  if (!at) return null
+  const n = c.a + c.b - at.a - at.b
+  const a = c.a - at.a
+  if (n < 200 || a < 0 || a > n) return null
+  return { n, share: a / n }
+}
+
+/**
+ * How what's left should split, and how sure we are. Starts from the prior (reporting's read, or the counties still out
+ * plus the state's usual late lean) and updates on how the votes counted since the report actually went. The two are
+ * weighed by their uncertainty: the prior's sd, and LATE_TAU for the count, loosened when little of the pool has been seen.
+ */
+export function remainingShare(c: Count, k: KeyRace, leftMean = leftNow(c, k)): { mean: number; sd: number } {
+  const p = k.profile
+  const rep = k.reported
+  const n = c.a + c.b
+  const prior = rep?.shareA ?? ((rep?.mix === 'state' ? (n ? c.a / n : 0.5) : shareOfLeft(c, leftMean)) + p.lean)
+  const seen = seenSince(c, k)
+  if (!seen || !rep) return { mean: prior, sd: p.sd }
+  const total = n + Object.values(c.others).reduce((a, b) => a + b, 0)
+  const pool = rep.left * (total > 0 ? n / total : 1)
+  const tau = LATE_TAU * Math.sqrt(1 + (SMALL_BATCH * pool) / seen.n)
+  const wPrior = 1 / (p.sd * p.sd)
+  const wSeen = 1 / (tau * tau)
+  return { mean: (prior * wPrior + seen.share * wSeen) / (wPrior + wSeen), sd: 1 / Math.sqrt(wPrior + wSeen) }
 }
 
 export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnRace {
@@ -79,9 +112,8 @@ export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnR
   const mean = leftNow(c, k)
   const spread = rep ? rep.spread : p.spread
   const left = mean * Math.exp(spread * r.normal() - (spread * spread) / 2)
-  const base = rep?.shareA ?? (rep?.mix === 'state' ? (n ? c.a / n : 0.5) : shareOfLeft(c, mean))
-  const lean = (rep?.shareA != null ? 0 : p.lean) + p.sd * (Math.sqrt(1 - NATIONAL_SHARE) * r.fat() + Math.sqrt(NATIONAL_SHARE) * national)
-  const inLeft = clamp(base + lean, 0, 1)
+  const split = remainingShare(c, k, mean)
+  const inLeft = clamp(split.mean + split.sd * (Math.sqrt(1 - NATIONAL_SHARE) * r.fat() + Math.sqrt(NATIONAL_SHARE) * national), 0, 1)
   // Official canvasses move totals a hair even when "everything" is in.
   const canvass = 0.0002 * r.normal()
   let share = clamp((c.a + left * inLeft) / (n + left) + canvass, 0, 1)
@@ -181,6 +213,10 @@ export type PublicBet = {
   note?: string; done?: string
   /** Where the votes-left estimate comes from, when it's reporting rather than the feed. */
   reported?: { asOf: string; source: string; url: string }
+  /** Votes counted since that report and side A's share of them (percent): the evidence the estimate has learned from. */
+  since?: { n: number; share: number }
+  /** Side A's share of what's left, as the model now has it (percent), after that evidence. */
+  rest?: { mean: number; sd: number }
   /** Highest "% reporting" the feed has shown. It sometimes drops back; we never do. */
   pctSeen?: number
   settled?: boolean
@@ -309,7 +345,9 @@ export function roundToTotal(cents: number[]): number[] {
 
 export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; members: MembersLive } {
   const { markets, entries, counts } = input
-  const r = rng(hashSeed(JSON.stringify(counts) + JSON.stringify(input.mississippi)))
+  // Seeded by the vote counts alone, so an update with no new votes gives exactly the same page.
+  const seedOf = (c: Count) => [c.a, c.b, c.pct, Math.round(c.countyLeft), Object.values(c.others)]
+  const r = rng(hashSeed(JSON.stringify([Object.keys(counts).sort().map((id) => [id, seedOf(counts[id])]), seedOf(input.mississippi), markets.map((m) => m.official ?? 0)])))
   const races = markets.filter((m) => !['senate_seats', 'house_seats'].includes(m.kind))
   const seatBets = markets.filter((m) => ['senate_seats', 'house_seats'].includes(m.kind))
   const people = [...new Set(entries.map((e) => e.user))]
@@ -470,6 +508,10 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
       pub.firstRound = { p: (aMore ? f.a : f.b) / draws, name: m.candidates[aMore ? 0 : 1].name, from: aMore ? f.minA : f.minB }
     }
     if (k.reported) pub.reported = { asOf: k.reported.asOf, source: k.reported.source, url: k.reported.url }
+    const seen = seenSince(c, k)
+    if (seen) pub.since = { n: seen.n, share: 100 * seen.share }
+    const split = remainingShare(c, k)
+    pub.rest = { mean: 100 * split.mean, sd: 100 * split.sd }
     pub.pctSeen = c.pct
     pub.note = k.profile.note
     pub.done = k.profile.done
