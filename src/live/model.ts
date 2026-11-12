@@ -239,7 +239,7 @@ export type MemberBet = {
   /** True when "nobody wins, money back" is more likely than any one guess. The label is then about that. */
   refundLeads: boolean
   /** Everyone's guess, in the same units as the strip. */
-  ticks: { name: string; x: number; side: string | null; rank: number | null }[]
+  ticks: { name: string; x: number; side: string | null; rank: number | null; p?: number }[]
 }
 export type Bettor = { name: string; paid: number; net: number; lo: number; hi: number; bets: number; of: number; dollars: number; density: Density
   /**
@@ -543,7 +543,7 @@ export function project(input: LiveInputs, draws = DRAWS): { pub: PublicLive; me
     const top = rows.slice(0, 3)
     const rank = new Map(top.map((row, i) => [row, i + 1]))
     const refund = nobody.get(m.id)! / draws
-    const ticks = rows.flatMap((row) => row.names.map((name) => ({ name, x: row.guess, side: row.side, rank: rank.get(row) ?? null })))
+    const ticks = rows.flatMap((row) => row.names.map((name) => ({ name, x: row.guess, side: row.side, rank: rank.get(row) ?? null, p: row.p })))
     const refundLeads = refund > (top[0]?.p ?? 0)
     return { id: m.id, rows: top, refund, moneyBack: pot ? moneyBack.get(m.id)! / draws / pot : 0, lean: leanLabel(Math.max(top[0]?.p ?? 0, refund)), refundLeads, ticks }
   }

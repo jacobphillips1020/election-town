@@ -206,3 +206,13 @@ export type Tier = 'Elite' | 'Great' | 'Good' | 'Mid'
  */
 export const TIER_LINES: [Tier, number][] = [['Elite', 3.5], ['Great', 4.5], ['Good', 5.5]]
 export const tierOf = (avgError: number): Tier => TIER_LINES.find(([, line]) => avgError < line)?.[0] ?? 'Mid'
+
+/** Dates worth coming back for, shown while that bet is undecided. `bet` is the market title. */
+export const WHATS_NEXT: { date: string; bet: string; text: string }[] = [
+  { date: '2026-11-12', bet: 'Kansas Senate', text: 'Kansas: Sedgwick County adds its provisional ballots' },
+  { date: '2026-11-13', bet: 'Alaska Senate', text: 'Alaska: next big count, the last day for mail from inside the U.S.' },
+  { date: '2026-11-13', bet: 'Kansas Senate', text: 'Kansas: Johnson County adds its provisional ballots' },
+  { date: '2026-11-16', bet: 'Kansas Senate', text: 'Kansas: county canvasses must be finished' },
+  { date: '2026-11-18', bet: 'Alaska Senate', text: 'Alaska: last ballots due, then the ranked-choice count' },
+  { date: '2026-11-23', bet: 'Maine Senate', text: 'Maine: official tabulation due' },
+]

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp, useRpc } from '../data/context'
-import { TIER_LINES, tierOf } from '../live/config'
+import { TIER_LINES, WHATS_NEXT, tierOf } from '../live/config'
 import type { Bettor, Density, MemberBet, MembersLive, PublicBet, PublicLive } from '../live/model'
 import { shortName } from '../live/names'
 import { tickKey, zones, type Zone } from '../live/zones'
@@ -96,6 +96,19 @@ function Results({ data }: { data: Payload }) {
         </p>
       </header>
 
+      {members && myName && <YouLine me={myName} bettors={members.bettors} open={undecided} memberOf={memberOf} />}
+
+      <details className="lv-read">
+        <summary>How to read this</summary>
+        <ul>
+          <li><b>Scoreboard.</b> The black tick is each person’s projected win or loss on every bet, side bets included. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land.</li>
+          <li><b>Avg. error</b> is how many points their race picks miss the projected margins by. It sets the tier: {TIER_LINES.map(([t, line]) => `${t} under ${line}`).join(', ')}. <b>Bias</b> is the party they guessed too high.</li>
+          <li><b>Dials.</b> The curved bar is where the final number could land: the darker, the likelier. The needle is the middle estimate. White lines mark where one guess takes over from the next, so the shading inside a slice is that guess’s chance. Numbered dots are the top three guesses; a gold ring is yours.</li>
+          <li>A +4.0 margin is a 52.0–48.0 split on your ballot.</li>
+          <li><b>Called</b> means a guess is over 99% to win its bet by this estimate. A TV call or a full count doesn’t decide it.</li>
+        </ul>
+      </details>
+
       {members ? <BettorTable bettors={members.bettors} me={myName} /> : (
         <section className="lv-card">
           <h2 className="lv-h2">Scoreboard</h2>
@@ -106,10 +119,7 @@ function Results({ data }: { data: Payload }) {
       {undecided.length > 0 && (
         <section className="lv-group">
           <h2 className="lv-group-title">Undecided</h2>
-          <p className="small muted lv-key">
-            The curved bar is where the final number could land: the darker, the likelier. The needle is the middle estimate. White lines mark where one guess takes over from the next, so the shading inside a slice is that guess’s chance.
-            A +4.0 margin is a 52.0–48.0 split on your ballot.
-          </p>
+          <WhatsNext titles={new Set(undecided.map((b) => b.title))} />
           <div className="lv-open">{undecided.map((b) => <BetCard key={b.id} bet={b} m={memberOf.get(b.id)} me={myName} before={before(b)} />)}</div>
         </section>
       )}
@@ -117,7 +127,7 @@ function Results({ data }: { data: Payload }) {
       {called.length > 0 && (
         <section className="lv-group lv-called-section">
           <h2 className="lv-group-title">Called</h2>
-          <p className="small muted lv-key">Over 99% to win the bet by this estimate. A TV call or a full count doesn’t decide it. Tap one to see how close it stands.</p>
+          <p className="small muted lv-key">Tap one to see how close it stands.</p>
           <div className="lv-called">
             {called.map((b) => <CalledRow key={b.id} bet={b} m={memberOf.get(b.id)} me={myName} before={before(b)} />)}
           </div>
@@ -137,6 +147,46 @@ function Results({ data }: { data: Payload }) {
         <p className="small muted">The estimates of late votes are judgment calls, mostly from past elections. Treat them as a good guess, not a fact. Nothing here pays out: the admin still enters each official result.</p>
       </details>
     </main>
+  )
+}
+
+// ---------------------------------------------------------------- you, and what's next
+
+/** One guess's chance to win its bet. Older updates only stored it for the top three. */
+function chanceOf(m: MemberBet | undefined, name: string): number | null {
+  if (!m) return null
+  const tick = m.ticks.find((t) => t.name === name)
+  if (!tick) return null
+  return m.rows.find((r) => r.names.includes(name))?.p ?? tick.p ?? null
+}
+
+function YouLine({ me, bettors, open, memberOf }: { me: string; bettors: Bettor[]; open: PublicBet[]; memberOf: Map<string, MemberBet> }) {
+  const mine = bettors.find((b) => b.name === me)
+  if (!mine) return null
+  const live = open.map((b) => ({ b, p: chanceOf(memberOf.get(b.id), me) })).filter((x) => x.p == null ? memberOf.get(x.b.id)?.ticks.some((t) => t.name === me && t.rank != null) : x.p >= 0.005)
+  const locked = Math.abs(mine.hi - mine.lo) < 50
+  return (
+    <section className="lv-you" aria-label="Where you stand">
+      <p><b>You: {mine.dollars === 0 ? '$0' : dollars(mine.dollars * 100)}</b> projected{locked ? ', locked in.' : <>, likely {dollars(mine.lo)} to {dollars(mine.hi)}.</>}</p>
+      {live.length > 0 ? (
+        <p className="lv-you-bets">Still in play:{' '}
+          {live.map(({ b, p }) => <a key={b.id} href={`#bet-${b.id}`}>{shortTitle(b)}{p != null && <b> {chance(p)}</b>}</a>)}
+        </p>
+      ) : open.length > 0 ? <p className="lv-you-bets muted">None of the undecided bets can still go your way.</p> : null}
+    </section>
+  )
+}
+
+function WhatsNext({ titles }: { titles: Set<string> }) {
+  const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d)
+  const today = day(new Date())
+  const items = WHATS_NEXT.filter((e) => e.date >= today && titles.has(e.bet)).slice(0, 5)
+  if (!items.length) return null
+  const label = (iso: string) => (iso === today ? 'Today' : new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }))
+  return (
+    <ul className="lv-next" aria-label="What’s next">
+      {items.map((e) => <li key={e.date + e.text}><b>{label(e.date)}</b><span>{e.text}</span></li>)}
+    </ul>
   )
 }
 
@@ -199,19 +249,19 @@ function Awards({ bettors }: { bettors: Bettor[] }) {
       {rich && (
         <div className="lv-award">
           <Award kind="money" chance={rich.moneyChance} />
-          <span><small>Money Winner</small><b>{rich.name}</b> {dollars(rich.net)}{rich.moneyChance != null && <em>{chance(rich.moneyChance)} to keep it</em>}</span>
+          <span><small>Money Winner</small><b>{rich.name}</b> <span className="lv-award-detail">{dollars(rich.net)}{rich.moneyChance != null && <em>{chance(rich.moneyChance)} to keep it</em>}</span></span>
         </div>
       )}
       {sharp && (
         <div className="lv-award">
           <Award kind="cup" chance={sharp.cupChance} />
-          <span><small>The Nate Silver Cup</small><b>{sharp.name}</b> off by {(sharp.avgError as number).toFixed(1)}{sharp.cupChance != null && <em>{chance(sharp.cupChance)} to keep it</em>}</span>
+          <span><small><span className="lv-award-long">The Nate Silver Cup</span><span className="lv-award-short">Silver Cup</span></small><b>{sharp.name}</b> <span className="lv-award-detail">off by {(sharp.avgError as number).toFixed(1)}{sharp.cupChance != null && <em>{chance(sharp.cupChance)} to keep it</em>}</span></span>
         </div>
       )}
       {worst && (
         <div className="lv-award lv-award-last">
           <Award kind="last" chance={worst.lastChance} />
-          <span><small>G. Elliott Morris Participation Trophy</small><b>{worst.name}</b> off by {(worst.avgError as number).toFixed(1)}{worst.lastChance != null && <em>{chance(worst.lastChance)} stuck with it</em>}</span>
+          <span><small><span className="lv-award-long">G. Elliott Morris Participation Trophy</span><span className="lv-award-short">Participation</span></small><b>{worst.name}</b> <span className="lv-award-detail">off by {(worst.avgError as number).toFixed(1)}{worst.lastChance != null && <em>{chance(worst.lastChance)} stuck with it</em>}</span></span>
         </div>
       )}
     </div>
@@ -236,7 +286,6 @@ function BettorTable({ bettors, me }: { bettors: Bettor[]; me: string | null }) 
     <section className="lv-card">
       <h2 className="lv-h2">Scoreboard</h2>
       <Awards bettors={bettors} />
-      <p className="small muted lv-sub">Projected win or loss on every bet, side bets included. The black tick is the projection. The bar fades as finishes get less likely, and the numbers show where 9 in 10 land. Avg. error is how many points their race picks miss the projected margins by, and it sets the tier: {TIER_LINES.map(([t, line]) => `${t} under ${line}`).join(', ')}. Bias is the party they guessed too high.</p>
       <table className="lv-money">
         <thead>
           <tr><th scope="col">Name<span className="lv-stats-short">tier · error · bias</span></th><th scope="col" className="lv-axis-cell"><span className="lv-vh">Range</span>
@@ -292,12 +341,12 @@ type BetProps = { bet: PublicBet; m?: MemberBet; me: string | null; before: numb
 function BetCard(props: BetProps) {
   const { bet, m } = props
   return (
-    <article className="lv-card lv-bet">
+    <article className="lv-card lv-bet" id={`bet-${bet.id}`}>
       <header className="lv-bet-head">
         <h3><Title bet={bet} /></h3>
         {m?.rows[0] && <LeanChip label={m.lean} who={m.refundLeads ? 'money back' : namesText(m.rows[0].names)} />}
       </header>
-      <BetBody {...props} />
+      <BetBody {...props} open />
     </article>
   )
 }
@@ -317,24 +366,24 @@ function CalledRow(props: BetProps) {
   )
 }
 
-function BetBody({ bet, m, me, before }: BetProps) {
+function BetBody({ bet, m, me, before, open = false }: BetProps & { open?: boolean }) {
   const nobody = bet.share && m ? bet.candidates.find((c) => !m.ticks.some((t) => t.side === c.id)) : null
   const seatRows = bet.hist?.filter((h) => h.p >= 0.005) ?? []
+  const gapText = bet.firstRound && bet.firstRound.p > 0.01 && bet.firstRound.p < 0.99 ? (
+    <p>
+      In {chance(bet.firstRound.p)} of finishes, {lastName(bet.firstRound.name)} clears 50% of first choices. Then there’s no ranked-choice round, so the margin jumps to {lastName(bet.firstRound.name)} +{bet.firstRound.from.toFixed(1)} or more. That’s why the bar has a gap.
+    </p>
+  ) : null
   const moved = before != null && bet.share && Math.abs(before - bet.share.p50) >= 0.1
   return (
     <>
-      <Dial bet={bet} m={m} before={before} />
+      <Dial bet={bet} m={m} before={before} me={me} />
       <p className="lv-needle-big">{middle(bet)}</p>
       {moved && <p className="small muted lv-center">Was {marginText(bet, before as number)} at the last update (thin line).</p>}
       <p className="small lv-center lv-range-line">
         {bet.share || seatRows.length > 4 ? rangeLine(bet) : seatRows.map((h, i) => <span key={h.r}>{i ? ' · ' : ''}<b>{h.r}</b> {chance(h.p)}</span>)}
         {bet.open && bet.open.length > 0 && <span className="muted"> Depends on {bet.open.map((o) => o.title).join(' and ')}.</span>}
       </p>
-      {bet.firstRound && bet.firstRound.p > 0.01 && bet.firstRound.p < 0.99 && (
-        <p className="small muted lv-center">
-          In {chance(bet.firstRound.p)} of finishes, {lastName(bet.firstRound.name)} clears 50% of first choices. Then there’s no ranked-choice round, so the margin jumps to {lastName(bet.firstRound.name)} +{bet.firstRound.from.toFixed(1)} or more. That’s why the bar has a gap.
-        </p>
-      )}
       {m && (
         <ol className="lv-board">
           {m.rows.map((r, i) => (
@@ -350,13 +399,18 @@ function BetBody({ bet, m, me, before }: BetProps) {
           )}
         </ol>
       )}
-      {bet.note && (
-        <p className="small muted lv-bet-note">
-          {bet.note} {bet.done}
-          {bet.reported && <> Votes left: <a href={bet.reported.url} target="_blank" rel="noreferrer">{bet.reported.source}</a>, {shortDate(bet.reported.asOf)}{daysOld(bet.reported.asOf) >= 3 ? ` (${daysOld(bet.reported.asOf)} days old)` : ''}, less anything counted since.</>}
+      {open && bet.done && <p className="small lv-next-line">{bet.done}</p>}
+      {(bet.note || gapText) && (
+        <details className="lv-why">
+          <summary>Why this estimate</summary>
+          {gapText}
+          {bet.note && <p>{bet.note}{!open && bet.done ? ` ${bet.done}` : ''}</p>}
+          <p>
+            {bet.reported && <>Votes left: <a href={bet.reported.url} target="_blank" rel="noreferrer">{bet.reported.source}</a>, {shortDate(bet.reported.asOf)}{daysOld(bet.reported.asOf) >= 3 ? ` (${daysOld(bet.reported.asOf)} days old)` : ''}, less anything counted since.</>}
           {bet.since && bet.share && <> Counted since then: {roughly(bet.since.n)} votes, {(bet.since.share >= 50 ? bet.since.share : 100 - bet.since.share).toFixed(1)}% {lastName(bet.candidates[bet.since.share >= 50 ? 0 : 1].name)}.</>}
           {bet.rest && bet.share && <> The rest is figured at {(bet.rest.mean >= 50 ? bet.rest.mean : 100 - bet.rest.mean).toFixed(0)}% {lastName(bet.candidates[bet.rest.mean >= 50 ? 0 : 1].name)}, give or take {Math.round(bet.rest.sd)}.</>}
-        </p>
+          </p>
+        </details>
       )}
     </>
   )
@@ -429,8 +483,10 @@ function wedges(s: Scene) {
   return out
 }
 
-function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: number | null }) {
+function Dial({ bet, m, before, me = null }: { bet: PublicBet; m?: MemberBet; before: number | null; me?: string | null }) {
   const s = scene(bet, m)
+  const mine = me ? m?.ticks.find((t) => t.name === me) : undefined
+  const mineKey = mine ? tickKey(mine) : null
   const t = s.pos(s.mid)
   const [shown, setShown] = useState(0.5)
   useEffect(() => { const id = requestAnimationFrame(() => setShown(t)); return () => cancelAnimationFrame(id) }, [t])
@@ -461,7 +517,7 @@ function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: numbe
       })}
       {s.xs.filter((x) => x.rank == null).map((x, i) => {
         const [px, py] = polar(s.pos(x.x), R1 + 6)
-        return <circle key={i} cx={px} cy={py} r="3" fill={color(x.side)} stroke="var(--paper)" strokeWidth="1" />
+        return <g key={i}>{tickKey(x) === mineKey && <circle cx={px} cy={py} r="6.5" className="lv-mine" />}<circle cx={px} cy={py} r="3" fill={color(x.side)} stroke="var(--paper)" strokeWidth="1" /></g>
       })}
       {ranked.map(({ x, p, r }) => {
         const [x0, y0] = polar(p, R1)
@@ -469,6 +525,7 @@ function Dial({ bet, m, before }: { bet: PublicBet; m?: MemberBet; before: numbe
         return (
           <g key={tickKey(x)}>
             <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={color(x.side)} strokeWidth="1.25" />
+            {tickKey(x) === mineKey && <circle cx={x1} cy={y1} r="11" className="lv-mine" />}
             <circle cx={x1} cy={y1} r="8" fill={color(x.side)} stroke="var(--paper)" strokeWidth="1.5" />
             <text x={x1} y={y1 + 3.5} textAnchor="middle" className="lv-strip-num">{x.rank}</text>
           </g>

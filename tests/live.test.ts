@@ -199,6 +199,13 @@ describe('project', () => {
     expect(lowest.cupChance).toBeGreaterThan(0)
   })
 
+  test('every guess carries its chance, and they match the leaderboard', () => {
+    for (const b of project(inputs(), 1500).members.bets) {
+      for (const row of b.rows) for (const name of row.names) expect(b.ticks.find((x) => x.name === name)!.p).toBe(row.p)
+      for (const x of b.ticks) expect(x.p).toBeGreaterThanOrEqual(0)
+    }
+  })
+
   test('every error bar holds its estimate, and nobody can lose more than they paid', () => {
     for (const b of run.members.bettors) {
       expect(b.lo).toBeLessThanOrEqual(b.net + 1)
