@@ -119,7 +119,8 @@ export function drawRace(c: Count, k: KeyRace, r: Rng, national: number): DrawnR
   let share = clamp((c.a + left * inLeft) / (n + left) + canvass, 0, 1)
   let first: DrawnRace['first'] = null
   if (k.transfers?.length) {
-    const othersNow = Object.values(c.others).reduce((a, b) => a + b, 0)
+    const listed = Object.values(c.others).reduce((a, b) => a + b, 0)
+    const othersNow = listed + ((k.unlisted ?? 0) * (n + listed)) / (1 - (k.unlisted ?? 0))
     const twoWay = n + left
     const total = twoWay * (1 + othersNow / Math.max(n, 1))
     const A = share * twoWay
