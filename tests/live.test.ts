@@ -510,6 +510,20 @@ describe('learning the split from the count', () => {
   })
 })
 
+describe('a newer count from reporting', () => {
+  test('is used while the feed is behind, and dropped once the feed catches up', async () => {
+    const { withReportedCount } = await import('../api/_live')
+    const k = { reported: { counts: { a: 568118, b: 509213, others: 33616 } } }
+    const behind: Count = { a: 561143, b: 505558, others: { 'David C Graham': 33195 }, pct: 96, countyLeft: 0, countyShareA: 0.5, updated: '' }
+    const got = withReportedCount(behind, k)
+    expect([got.a, got.b]).toEqual([568118, 509213])
+    expect(Object.values(got.others).reduce((x, y) => x + y, 0)).toBeCloseTo(33616, 6)
+    const ahead: Count = { ...behind, a: 569000, b: 510000, others: { 'David C Graham': 33700 } }
+    expect(withReportedCount(ahead, k)).toBe(ahead)
+    expect(withReportedCount(behind, {})).toBe(behind)
+  })
+})
+
 describe('feed', () => {
   const race: FeedRace = {
     election_name: 'Test', percent_reporting: 80, last_updated: 'now',

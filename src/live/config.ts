@@ -31,6 +31,8 @@ export type Reported = {
   shareA?: number
   /** The two candidates' votes in the feed when this was reported. Votes counted since then are evidence for how the rest splits. */
   at?: { a: number; b: number }
+  /** A newer count than the feed's (AP's), used until the feed catches up: the two candidates' votes and everyone else's. */
+  counts?: { a: number; b: number; others: number }
 }
 
 /**
@@ -141,12 +143,14 @@ export const KEY_RACES: Record<string, KeyRace> = {
 export const SIDE_RACES: Record<string, KeyRace> = {
   'Kansas Senate': {
     raceId: 87162, state: 'KS',
-    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'About 26,000 provisional ballots are still to be reviewed, and AP expects about 15,000 to count. Provisionals leaned a little Democratic in 2022. Some counties have finished and the feed hasn’t caught up; the big counties finish Monday.', done: 'Sedgwick and Johnson counties certify Monday, Nov. 16.' },
-    reported: { asOf: '2026-11-14', source: 'AP via NBC and the Kansas Secretary of State', url: 'https://www.ksnt.com/elections/over-26000-provisional-ballots-await-review-for-inclusion-in-2026-kansas-general-election-results/', left: 17258, countedAt: 1099896, spread: 0.3, mix: 'state', at: { a: 561143, b: 505558 },
-      // The Secretary of State counts 26,232 provisional ballots not yet added; AP expects about 15,000 to count, on a total
-      // 2,258 votes ahead of the feed's. In 2022 provisionals leaned a little Democratic but "don't go massively for one party"
-      // (KSNT). The ~1,900 late votes counted Nov. 6-7 ran well ahead of Hamilton, but that's a small sample: 56.5%.
-      shareA: 0.565 },
+    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'Johnson, Douglas and Wyandotte counties have added their provisional ballots: about 10,600 votes at 66% Hamilton, which the feed hasn’t picked up yet, so this uses AP’s count. AP expects about 7,000 more, mostly provisionals from Sedgwick and Shawnee counties.', done: 'Sedgwick County certifies today, Nov. 16.' },
+    reported: { asOf: '2026-11-16', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results', left: 7000, countedAt: 1110947, spread: 0.35, mix: 'state',
+      // AP's count, Nov. 16, ahead of the feed by 11,051 votes: Johnson, Douglas and Wyandotte counties' provisionals came in at
+      // about 66% Hamilton (10,630 head to head). Sedgwick (certifying today) and Shawnee haven't added theirs.
+      counts: { a: 568118, b: 509213, others: 33616 }, at: { a: 568118, b: 509213 },
+      // What's left: Sedgwick and Shawnee provisionals (their counties run 54% and 60% Hamilton overall; provisionals lean a bit
+      // further his way) and a few rural counties. 57%, give or take 6.
+      shareA: 0.57 },
   },
   'New York governor': {
     raceId: 87329, state: 'NY',
@@ -214,7 +218,8 @@ export const tierOf = (avgError: number): Tier => TIER_LINES.find(([, line]) => 
 
 /** Dates worth coming back for, shown while that bet is undecided. `bet` is the market title. */
 export const WHATS_NEXT: { date: string; bet: string; text: string }[] = [
-  { date: '2026-11-16', bet: 'Kansas Senate', text: 'Kansas: Sedgwick and Johnson counties certify their provisional ballots' },
+  { date: '2026-11-16', bet: 'Kansas Senate', text: 'Kansas: Sedgwick County certifies its provisional ballots' },
+  { date: '2026-12-01', bet: 'Kansas Senate', text: 'Kansas: state certifies the results' },
   { date: '2026-11-18', bet: 'Alaska Senate', text: 'Alaska: last overseas ballots due, then the ranked-choice count if nobody has 50%' },
   { date: '2026-11-25', bet: 'Maine Senate', text: 'Maine: official results due to the governor' },
 ]

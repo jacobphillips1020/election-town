@@ -9,6 +9,17 @@ type Row = Record<string, unknown>
 
 const isSeat = (m: LiveMarket) => m.kind === 'senate_seats' || m.kind === 'house_seats'
 
+/** When reporting has a newer count than the feed (AP's, ahead of the feed), use it until the feed catches up. */
+export function withReportedCount(c: Count, k: { reported?: { counts?: { a: number; b: number; others: number } } }): Count {
+  const rc = k.reported?.counts
+  if (!rc) return c
+  const others = Object.values(c.others).reduce((x, y) => x + y, 0)
+  if (c.a + c.b + others >= rc.a + rc.b + rc.others) return c
+  const scale = others > 0 ? rc.others / others : 0
+  const scaled = others > 0 ? Object.fromEntries(Object.entries(c.others).map(([n, v]) => [n, v * scale])) : { Others: rc.others }
+  return { ...c, a: rc.a, b: rc.b, others: scaled }
+}
+
 /** The feed's "% reporting" sometimes drops back with no change in votes. Never let it go below the highest we've seen. */
 const floorPct = (c: Count, seen?: number) => (seen != null && seen > c.pct ? { ...c, pct: seen } : c)
 
@@ -23,7 +34,7 @@ export function buildInputs(allMarkets: LiveMarket[], allEntries: Row[], feed: R
   const counts: Record<string, Count> = {}
   for (const m of markets) {
     if (isSeat(m)) continue
-    counts[m.id] = floorPct(toCount(feed[RACES[m.title].raceId], m.candidates[0].name, m.candidates[1].name), pctSeen[m.title])
+    counts[m.id] = withReportedCount(floorPct(toCount(feed[RACES[m.title].raceId], m.candidates[0].name, m.candidates[1].name), pctSeen[m.title]), RACES[m.title])
   }
   const entries: LiveEntry[] = rawEntries.map((e) => ({
     id: e.id as string, user: e.user_id as string, name: shortName(e.display_name as string), market: e.market_id as string,
