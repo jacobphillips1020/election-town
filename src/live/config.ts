@@ -56,22 +56,20 @@ export type KeyRace = {
 }
 
 // Votes left come from reporting (AP's expected vote, published by NBC, and state officials), dated in each `reported`.
-// The feed's own "% reporting" jumps around, so it's only a fallback. Refresh these figures when reporting moves.
+// The feed's own "% reporting" jumps around, so it's only a fallback. Refresh these figures when reporting moves (last: Nov. 20).
 export const KEY_RACES: Record<string, KeyRace> = {
   'Alaska Senate': {
     raceId: 86916, state: 'AK',
     profile: {
       floor: 0.01, trust: 1, lean: 0, sd: 0.035, spread: 0.2,
-      note: 'About 277,000 votes are counted and AP expects about 12,000 more: overseas absentee ballots, which can arrive through Wednesday, and questioned ballots. Ballots counted since Election Day have run about 58–60% Peltola head to head. She is just under 50% of first choices (49.8% in the state’s count). If she crosses it, there’s no ranked-choice round; if not, second choices net Sullivan about 900 votes.',
-      done: 'Counting continues through Wednesday, Nov. 18, then the ranked-choice count.',
+      note: 'The count is essentially done: AP has fewer than 500 votes left and has projected Peltola. She finished with just over 50% of first choices, so there is no ranked-choice round; this scores her head-to-head share of the first round.',
+      done: 'State certification is still to come.',
     },
     // Ballots left, Nov. 14: AP expects about 12,000 more on its count of 277,368, which is 855 ahead of the feed's.
     reported: {
-      asOf: '2026-11-14', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/alaska-senate-results',
-      left: 12855, countedAt: 276513, spread: 0.2, mix: 'state', at: { a: 138240, b: 127828 },
-      // Ballots counted since Election Day, head to head: 73% (rural, Nov. 9), 54% (Nov. 10), then 59.5% across the 32,000
-      // counted Nov. 11-14. Overseas and questioned ballots are a different mix again, so 58%, give or take 3.5.
-      shareA: 0.58,
+      asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/alaska-senate-results',
+      // Nov. 20: AP has fewer than 500 votes left and has projected Peltola, with 50.13% of first choices counting write-ins.
+      left: 500, countedAt: 287321, spread: 0.5, mix: 'state', at: { a: 144486, b: 131965 }, shareA: 0.58,
     },
     // Write-ins: the state's count has Peltola at 49.8% of first choices on Nov. 13 (ADN); the feed, which leaves write-ins out,
     // implies 49.99%. About 0.35% of votes are write-ins the feed doesn't show. Small, but it decides the 50% line.
@@ -96,11 +94,14 @@ export const KEY_RACES: Record<string, KeyRace> = {
   },
   'Maine Senate': {
     raceId: 87188, state: 'ME',
-    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.035, spread: 0.3, note: 'AP still expects about 20,000 more votes, from towns that so far split about 45–55 against Jackson: Sanford, Bangor, Augusta and Lewiston, plus many small towns up north. But nothing has been added since Nov. 6 and AP hasn’t changed its estimate, so how many are really coming is the big unknown.', done: 'Official results due to the governor by Nov. 25.' },
-    reported: { asOf: '2026-11-11', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/maine-senate-results', left: 20606, countedAt: 709755, spread: 0.45, mix: 'county', at: { a: 376070, b: 332803 },
-      // How what's left should split, two ways that agree: the feed's partly reported towns add up to 45.5% Jackson, and the
-      // 34,000 votes added Nov. 5-6 went 44% Jackson. AP's estimate hasn't moved since Nov. 9 and no votes have arrived in five
-      // days, so the size is the weak point: a wide spread.
+    profile: { floor: 0.001, trust: 0.5, lean: 0, sd: 0.035, spread: 0.3, note: 'AP now has Jackson at 53.1%, just above 52.95%, the line between the two leading guesses. AP still lists 20,000 votes out, but that estimate hasn’t changed since Nov. 9, Maine towns must report within two days, and only about 1,000 votes have been added since Nov. 13. If many more come in, they’re from towns that lean Collins; if not, Jackson stays above the line.', done: 'Official results due to the governor by Nov. 25.' },
+    reported: { asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/maine-senate-results',
+      // AP's count is about 600 votes ahead of the feed's. AP still lists 20,000 left, an estimate unchanged since Nov. 9, though
+      // Maine towns must report to the state within two days and AP has added only about 1,000 votes since Nov. 13 (89% Jackson).
+      // So the real number is probably smaller: centered on 8,000, anywhere from about 2,000 to the full 20,000.
+      left: 8000, countedAt: 710361, spread: 0.8, mix: 'county', counts: { a: 376955, b: 332918, others: 488 }, at: { a: 376955, b: 332918 },
+      // How what's left should split: the feed's partly reported towns add up to 45.5% Jackson, and the 34,000 votes added Nov. 5-6
+      // went 44%.
       shareA: 0.455 },
   },
 
@@ -111,10 +112,13 @@ export const KEY_RACES: Record<string, KeyRace> = {
   },
   'Nebraska Senate': {
     raceId: 87254, state: 'NE',
-    profile: { floor: 0.003, trust: 1, lean: 0, sd: 0.07, spread: 0.35, note: 'AP expects about 12,000 more votes. The 7,800 added since Nov. 9 ran 64% Osborn, likely late early ballots from Lancaster and Douglas counties, where he runs about 61%. What’s left is provisional ballots, which are cast more in those two counties, and small rural counties still finishing, where he runs about 35%.', done: 'Counties finish their canvasses this month.' },
+    profile: { floor: 0.003, trust: 1, lean: 0, sd: 0.07, spread: 0.35, note: 'AP expects about 4,700 more votes, mostly from Douglas County (Omaha), where Osborn runs about 61%. Late batches have run about 64% Osborn. The second-place guess needs Osborn to finish at 47.2% or more, which would take about 85% of what’s left.', done: 'Counties finish their canvasses this month.' },
     // Nov. 14: AP expects about 12,000 more. How they split, two reads that disagree: the feed's slow counties add up to 35%
     // Osborn; provisional ballots skew to Omaha and Lincoln (61%). An even split, with a wide 7-point uncertainty.
-    reported: { asOf: '2026-11-14', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/nebraska-senate-results', left: 12019, countedAt: 762996, spread: 0.35, mix: 'state', at: { a: 336296, b: 381045 }, shareA: 0.5 },
+    reported: { asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/nebraska-senate-results',
+      // AP expects about 4,700 more on its count of 766,701; the feed is 500 ahead of that. Douglas County (Omaha, 61% Osborn) is
+      // the one big county AP still has below 99%. The ~3,800 votes added since Nov. 14 ran 64% Osborn.
+      left: 4200, countedAt: 767201, spread: 0.5, mix: 'state', at: { a: 338740, b: 382400 }, shareA: 0.6 },
   },
 
   'New Hampshire Senate': {
@@ -129,8 +133,10 @@ export const KEY_RACES: Record<string, KeyRace> = {
   },
   'Ohio Senate (special)': {
     raceId: 87527, state: 'OH',
-    profile: { floor: 0.025, trust: 0.25, lean: 0.05, sd: 0.05, spread: 0.4, note: 'About 107,000 votes are still out, mostly provisional ballots, which are cast more in cities and usually lean Democratic. Nothing new gets added until the official canvass.', done: 'Official canvass must finish by Nov. 24.' },
-    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-special-elections/ohio-senate-results', left: 106646, countedAt: 4601925, spread: 0.25, mix: 'state', at: { a: 2301042, b: 2077748 } },
+    profile: { floor: 0.025, trust: 0.25, lean: 0.05, sd: 0.05, spread: 0.4, note: 'About 58,000 votes are still out, per AP, mostly provisional ballots added at the official canvass. The ones counted so far have run about 63% Brown.', done: 'Official canvass must finish by Nov. 24.' },
+    reported: { asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-special-elections/ohio-senate-results',
+      // AP is about 36,000 votes ahead of the feed (63.5% Brown head to head since Nov. 9) and expects about 58,000 more.
+      left: 58000, countedAt: 4637683, spread: 0.3, mix: 'state', counts: { a: 2323001, b: 2090390, others: 224292 }, at: { a: 2323001, b: 2090390 } },
   },
   'Texas Senate': {
     raceId: 87438, state: 'TX',
@@ -143,19 +149,18 @@ export const KEY_RACES: Record<string, KeyRace> = {
 export const SIDE_RACES: Record<string, KeyRace> = {
   'Kansas Senate': {
     raceId: 87162, state: 'KS',
-    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'Johnson, Douglas and Wyandotte counties have added their provisional ballots: about 10,600 votes at 66% Hamilton, which the feed hasn’t picked up yet, so this uses AP’s count. AP expects about 7,000 more, mostly provisionals from Sedgwick and Shawnee counties.', done: 'Sedgwick County certifies today, Nov. 16.' },
-    reported: { asOf: '2026-11-16', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results', left: 7000, countedAt: 1110947, spread: 0.35, mix: 'state',
-      // AP's count, Nov. 16, ahead of the feed by 11,051 votes: Johnson, Douglas and Wyandotte counties' provisionals came in at
-      // about 66% Hamilton (10,630 head to head). Sedgwick (certifying today) and Shawnee haven't added theirs.
-      counts: { a: 568118, b: 509213, others: 33616 }, at: { a: 568118, b: 509213 },
-      // What's left: Sedgwick and Shawnee provisionals (their counties run 54% and 60% Hamilton overall; provisionals lean a bit
-      // further his way) and a few rural counties. 57%, give or take 6.
-      shareA: 0.57 },
+    profile: { floor: 0.012, trust: 1, lean: 0.02, sd: 0.06, spread: 0.4, note: 'The big counties’ provisional ballots are in, using AP’s count because the feed hasn’t caught up: about 14,800 votes at 65% Hamilton. AP expects about 1,100 more.', done: 'The state certifies by Dec. 1.' },
+    reported: { asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/kansas-senate-results',
+      // Nov. 20: AP has Sedgwick County's provisionals in (+2,612 Hamilton, +1,561 Marshall) and about 1,100 votes left.
+      left: 1100, countedAt: 1116781, spread: 0.5, mix: 'state', counts: { a: 571573, b: 511360, others: 33848 }, at: { a: 571573, b: 511360 }, shareA: 0.57 },
   },
   'New York governor': {
     raceId: 87329, state: 'NY',
-    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'New York counts early and Election Day votes first. Mail ballots postmarked on time can arrive through Nov. 10, and affidavit ballots come after that.' },
-    reported: { asOf: '2026-11-09', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/new-york-governor-results', left: 485242, countedAt: 6056295, spread: 0.3, mix: 'county', at: { a: 3624374, b: 2419173 } },
+    profile: { floor: 0.03, trust: 0.6, lean: 0.02, sd: 0.04, spread: 0.4, note: 'AP expects about 240,000 more votes, mostly in New York City. Counties must certify by Nov. 28, and many report in a few big batches.' },
+    reported: { asOf: '2026-11-20', source: 'AP via NBC', url: 'https://www.nbcnews.com/politics/2026-elections/new-york-governor-results',
+      // AP is about 64,000 votes ahead of the feed and expects about 240,000 more, mostly in New York City. In 2022 New York's late
+      // count ran about 13 points more Democratic than the earlier tally; geography alone (the city counting late) gives 66%.
+      left: 240000, countedAt: 6141704, spread: 0.35, mix: 'state', counts: { a: 3670764, b: 2457976, others: 12964 }, at: { a: 3670764, b: 2457976 }, shareA: 0.69 },
   },
   'NY-17 House': {
     raceId: 87319, state: 'NY', seatKey: 'ny-17',
@@ -222,4 +227,5 @@ export const WHATS_NEXT: { date: string; bet: string; text: string }[] = [
   { date: '2026-12-01', bet: 'Kansas Senate', text: 'Kansas: state certifies the results' },
   { date: '2026-11-18', bet: 'Alaska Senate', text: 'Alaska: last overseas ballots due, then the ranked-choice count if nobody has 50%' },
   { date: '2026-11-25', bet: 'Maine Senate', text: 'Maine: official results due to the governor' },
+  { date: '2026-11-28', bet: 'New York governor', text: 'New York: counties must certify' },
 ]

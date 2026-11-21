@@ -402,12 +402,14 @@ describe('ranked choice', () => {
     expect(finals.reduce((a, b) => a + b, 0) / finals.length).toBeLessThan(48000 / 95000)
   })
   test('Alaska\'s range has a gap: a first-round majority is a jump, not a slide', () => {
-    const run = project(inputs(), 8000)
-    const ak = run.pub.bets.find((b) => b.title === 'Alaska Senate')!
-    expect(ak.firstRound!.p).toBeGreaterThan(0.01)
-    expect(ak.firstRound!.p).toBeLessThan(0.99)
+    // Fixed sample settings, not the live ones: just under 50% of first choices, with enough left to land either side.
+    const c: Count = { a: 103171, b: 102617, others: { 'Gerald L. Heikes': 4851, 'Daniel J. Jr. Sullivan': 3607 }, pct: 74, countyLeft: 0, countyShareA: 0.5, updated: '' }
+    const sample: KeyRace = { ...k, unlisted: 0, reported: { asOf: '2026-11-09', source: 'test', url: '', left: 60000, countedAt: 214246, spread: 0.15, mix: 'state', shareA: 0.58 } }
     const a = rng(4)
-    const margins = Array.from({ length: 20000 }, () => { const d = drawRace(fixed.counts['Alaska Senate'], k, a, a.normal()); return { m: Math.abs(2 * d.final - 1) * 100, first: d.first } })
+    const margins = Array.from({ length: 20000 }, () => { const d = drawRace(c, sample, a, a.normal()); return { m: Math.abs(2 * d.final - 1) * 100, first: d.first } })
+    const firstShare = margins.filter((x) => x.first === 'a').length / margins.length
+    expect(firstShare).toBeGreaterThan(0.01)
+    expect(firstShare).toBeLessThan(0.99)
     const lowest = Math.min(...margins.filter((x) => x.first === 'a').map((x) => x.m))
     const justBelow = margins.filter((x) => x.first == null && x.m > lowest - 0.5 && x.m < lowest).length
     const justAbove = margins.filter((x) => x.first === 'a' && x.m < lowest + 0.5).length
